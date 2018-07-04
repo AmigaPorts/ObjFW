@@ -26,17 +26,29 @@
 #import "OFStdIOStream.h"
 #import "OFString.h"
 
-#import "TarArchive.h"
-#import "OFZIP.h"
+#import "LHAArchive.h"
+#import "OFArc.h"
 
-static OFZIP *app;
+static OFArc *app;
+
+static OFString *
+indent(OFString *string)
+{
+	return [string stringByReplacingOccurrencesOfString: @"\n"
+						 withString: @"\n\t"];
+}
 
 static void
-setPermissions(OFString *path, OFTarArchiveEntry *entry)
+setPermissions(OFString *path, OFLHAArchiveEntry *entry)
 {
 #ifdef OF_FILE_MANAGER_SUPPORTS_PERMISSIONS
+	OFNumber *mode = [entry mode];
+
+	if (mode == nil)
+		return;
+
 	of_file_attributes_t attributes = [OFDictionary
-	    dictionaryWithObject: [OFNumber numberWithUInt16: [entry mode]]
+	    dictionaryWithObject: mode
 			  forKey: of_file_attribute_key_posix_permissions];
 
 	[[OFFileManager defaultManager] setAttributes: attributes
@@ -44,11 +56,11 @@ setPermissions(OFString *path, OFTarArchiveEntry *entry)
 #endif
 }
 
-@implementation TarArchive
+@implementation LHAArchive
 + (void)initialize
 {
-	if (self == [TarArchive class])
-		app = (OFZIP *)[[OFApplication sharedApplication] delegate];
+	if (self == [LHAArchive class])
+		app = (OFArc *)[[OFApplication sharedApplication] delegate];
 }
 
 + (instancetype)archiveWithStream: (OF_KINDOF(OFStream *))stream
@@ -67,10 +79,11 @@ setPermissions(OFString *path, OFTarArchiveEntry *entry)
 	self = [super init];
 
 	@try {
-		_archive = [[OFTarArchive alloc] initWithStream: stream
+		_archive = [[OFLHAArchive alloc] initWithStream: stream
 							   mode: mode];
 
-		[_archive setEncoding: encoding];
+		if (encoding != OF_STRING_ENCODING_AUTODETECT)
+			[_archive setEncoding: encoding];
 	} @catch (id e) {
 		[self release];
 		@throw e;
@@ -88,7 +101,7 @@ setPermissions(OFString *path, OFTarArchiveEntry *entry)
 
 - (void)listFiles
 {
-	OFTarArchiveEntry *entry;
+	OFLHAArchiveEntry *entry;
 
 	while ((entry = [_archive nextEntry]) != nil) {
 		void *pool = objc_autoreleasePoolPush();
@@ -96,34 +109,61 @@ setPermissions(OFString *path, OFTarArchiveEntry *entry)
 		[of_stdout writeLine: [entry fileName]];
 
 		if (app->_outputLevel >= 1) {
-			OFString *date = [[entry modificationDate]
+			OFString *date = [[entry date]
 			    localDateStringWithFormat: @"%Y-%m-%d %H:%M:%S"];
-			OFString *size = [OFString stringWithFormat:
-			    @"%" PRIu64, [entry size]];
-			OFString *mode = [OFString stringWithFormat:
-			    @"%06o", [entry mode]];
-			OFString *UID = [OFString stringWithFormat:
-			    @"%u", [entry UID]];
-			OFString *GID = [OFString stringWithFormat:
-			    @"%u", [entry GID]];
+			OFString *compressedSize = [OFString stringWithFormat:
+			    @"%" PRIu32, [entry compressedSize]];
+			OFString *uncompressedSize = [OFString stringWithFormat:
+			    @"%" PRIu32, [entry uncompressedSize]];
+			OFString *CRC16 = [OFString stringWithFormat:
+			    @"%04" PRIX16, [entry CRC16]];
 
 			[of_stdout writeString: @"\t"];
-			[of_stdout writeLine: OF_LOCALIZED(@"list_size",
-			    @"Size: %[size] bytes",
-			    @"size", size)];
+			[of_stdout writeLine: OF_LOCALIZED(
+			    @"list_compressed_size",
+			    @"Compressed: %[size] bytes",
+			    @"size", compressedSize)];
 			[of_stdout writeString: @"\t"];
-			[of_stdout writeLine: OF_LOCALIZED(@"list_mode",
-			    @"Mode: %[mode]",
-			    @"mode", mode)];
+			[of_stdout writeLine: OF_LOCALIZED(
+			    @"list_uncompressed_size",
+			    @"Uncompressed: %[size] bytes",
+			    @"size", uncompressedSize)];
 			[of_stdout writeString: @"\t"];
-			[of_stdout writeLine: OF_LOCALIZED(@"list_uid",
-			    @"UID: %[uid]",
-			    @"uid", UID)];
+			[of_stdout writeLine: OF_LOCALIZED(
+			    @"list_compression_method",
+			    @"Compression method: %[method]",
+			    @"method", [entry compressionMethod])];
 			[of_stdout writeString: @"\t"];
-			[of_stdout writeLine: OF_LOCALIZED(@"list_gid",
-			    @"GID: %[gid]",
-			    @"gid", GID)];
+			[of_stdout writeLine: OF_LOCALIZED(@"list_crc16",
+			    @"CRC16: %[crc16]",
+			    @"crc16", CRC16)];
+			[of_stdout writeString: @"\t"];
+			[of_stdout writeLine: OF_LOCALIZED(@"list_date",
+			    @"Date: %[date]",
+			    @"date", date)];
 
+			if ([entry mode] != nil) {
+				OFString *modeString = [OFString
+				    stringWithFormat:
+				    @"%" PRIo16, [[entry mode] uInt16Value]];
+
+				[of_stdout writeString: @"\t"];
+				[of_stdout writeLine: OF_LOCALIZED(@"list_mode",
+				    @"Mode: %[mode]",
+				    @"mode", modeString)];
+			}
+			if ([entry UID] != nil) {
+				[of_stdout writeString: @"\t"];
+				[of_stdout writeLine: OF_LOCALIZED(@"list_uid",
+				    @"UID: %[uid]",
+				    @"uid", [entry UID])];
+			}
+			if ([entry GID] != nil) {
+				[of_stdout writeString: @"\t"];
+				[of_stdout writeLine: OF_LOCALIZED(@"list_gid",
+				    @"GID: %[gid]",
+				    @"gid", [entry GID])];
+			}
 			if ([entry owner] != nil) {
 				[of_stdout writeString: @"\t"];
 				[of_stdout writeLine: OF_LOCALIZED(
@@ -139,108 +179,51 @@ setPermissions(OFString *path, OFTarArchiveEntry *entry)
 				    @"group", [entry group])];
 			}
 
-			[of_stdout writeString: @"\t"];
-			[of_stdout writeLine: OF_LOCALIZED(
-			    @"list_modification_date",
-			    @"Modification date: %[date]",
-			    @"date", date)];
-		}
+			if (app->_outputLevel >= 2) {
+				OFString *headerLevel = [OFString
+				    stringWithFormat: @"%" PRIu8,
+						      [entry headerLevel]];
 
-		if (app->_outputLevel >= 2) {
-			[of_stdout writeString: @"\t"];
+				[of_stdout writeString: @"\t"];
+				[of_stdout writeLine: OF_LOCALIZED(
+				    @"list_header_level",
+				    @"Header level: %[level]",
+				    @"level", headerLevel)];
 
-			switch ([entry type]) {
-			case OF_TAR_ARCHIVE_ENTRY_TYPE_FILE:
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_type_normal",
-				    @"Type: Normal file")];
-				break;
-			case OF_TAR_ARCHIVE_ENTRY_TYPE_LINK:
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_type_hardlink",
-				    @"Type: Hard link")];
-				[of_stdout writeString: @"\t"];
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_link_target",
-				    @"Target file name: %[target]",
-				    @"target", [entry targetFileName])];
-				break;
-			case OF_TAR_ARCHIVE_ENTRY_TYPE_SYMLINK:
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_type_symlink",
-				    @"Type: Symbolic link")];
-				[of_stdout writeString: @"\t"];
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_link_target",
-				    @"Target file name: %[target]",
-				    @"target", [entry targetFileName])];
-				break;
-			case OF_TAR_ARCHIVE_ENTRY_TYPE_CHARACTER_DEVICE: {
-				OFString *majorString = [OFString
-				    stringWithFormat: @"%d",
-						      [entry deviceMajor]];
-				OFString *minorString = [OFString
-				    stringWithFormat: @"%d",
-						      [entry deviceMinor]];
+				if ([entry operatingSystemIdentifier] != '\0') {
+					OFString *OSID =
+					    [OFString stringWithFormat: @"%c",
+					    [entry operatingSystemIdentifier]];
 
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_type_character_device",
-				    @"Type: Character device")];
-				[of_stdout writeString: @"\t"];
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_device_major",
-				    @"Device major: %[major]",
-				    @"major", majorString)];
-				[of_stdout writeString: @"\t"];
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_device_minor",
-				    @"Device minor: %[minor]",
-				    @"minor", minorString)];
-				break;
+					[of_stdout writeString: @"\t"];
+					[of_stdout writeLine: OF_LOCALIZED(
+					    @"list_osid",
+					    @"Operating system identifier: "
+					    "%[osid]",
+					    @"osid", OSID)];
+				}
+
+				if ([entry modificationDate] != nil) {
+					OFString *modificationDate = [[entry
+					    modificationDate] description];
+
+					[of_stdout writeString: @"\t"];
+					[of_stdout writeLine: OF_LOCALIZED(
+					    @"list_modification_date",
+					    @"Modification date: %[date]",
+					    @"date", modificationDate)];
+				}
 			}
-			case OF_TAR_ARCHIVE_ENTRY_TYPE_BLOCK_DEVICE: {
-				OFString *majorString = [OFString
-				    stringWithFormat: @"%d",
-						      [entry deviceMajor]];
-				OFString *minorString = [OFString
-				    stringWithFormat: @"%d",
-						      [entry deviceMinor]];
 
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_type_block_device",
-				    @"Type: Block device")];
+			if (app->_outputLevel >= 3) {
+				OFString *extensions = indent([[entry
+				    extensions] description]);
+
 				[of_stdout writeString: @"\t"];
 				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_device_major",
-				    @"Device major: %[major]",
-				    @"major", majorString)];
-				[of_stdout writeString: @"\t"];
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_device_minor",
-				    @"Device minor: %[minor]",
-				    @"minor", minorString)];
-				break;
-			}
-			case OF_TAR_ARCHIVE_ENTRY_TYPE_DIRECTORY:
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_type_directory",
-				    @"Type: Directory")];
-				break;
-			case OF_TAR_ARCHIVE_ENTRY_TYPE_FIFO:
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_type_fifo",
-				    @"Type: FIFO")];
-				break;
-			case OF_TAR_ARCHIVE_ENTRY_TYPE_CONTIGUOUS_FILE:
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_type_contiguous_file",
-				    @"Type: Contiguous file")];
-				break;
-			default:
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"list_type_unknown",
-				    @"Type: Unknown")];
-				break;
+				    @"list_extensions",
+				    @"Extensions: %[extensions]",
+				    @"extensions", extensions)];
 			}
 		}
 
@@ -254,30 +237,19 @@ setPermissions(OFString *path, OFTarArchiveEntry *entry)
 	bool all = ([files count] == 0);
 	OFMutableSet OF_GENERIC(OFString *) *missing =
 	    [OFMutableSet setWithArray: files];
-	OFTarArchiveEntry *entry;
+	OFLHAArchiveEntry *entry;
 
 	while ((entry = [_archive nextEntry]) != nil) {
 		void *pool = objc_autoreleasePoolPush();
 		OFString *fileName = [entry fileName];
-		of_tar_archive_entry_type_t type = [entry type];
 		OFString *outFileName, *directory;
 		OFFile *output;
 		OFStream *stream;
-		uint64_t written = 0, size = [entry size];
+		uint64_t written = 0, size = [entry uncompressedSize];
 		int8_t percent = -1, newPercent;
 
 		if (!all && ![files containsObject: fileName])
 			continue;
-
-		if (type != OF_TAR_ARCHIVE_ENTRY_TYPE_FILE &&
-		    type != OF_TAR_ARCHIVE_ENTRY_TYPE_DIRECTORY) {
-			if (app->_outputLevel >= 0)
-				[of_stdout writeLine: OF_LOCALIZED(
-				    @"skipping_file",
-				    @"Skipping %[file]...",
-				    @"file", fileName)];
-			continue;
-		}
 
 		[missing removeObject: fileName];
 
@@ -297,9 +269,7 @@ setPermissions(OFString *path, OFTarArchiveEntry *entry)
 			    @"Extracting %[file]...",
 			    @"file", fileName)];
 
-		if (type == OF_TAR_ARCHIVE_ENTRY_TYPE_DIRECTORY ||
-		    (type == OF_TAR_ARCHIVE_ENTRY_TYPE_FILE &&
-		    [fileName hasSuffix: @"/"])) {
+		if ([fileName hasSuffix: @"/"]) {
 			[fileManager createDirectoryAtPath: outFileName
 					     createParents: true];
 			setPermissions(outFileName, entry);
@@ -324,11 +294,10 @@ setPermissions(OFString *path, OFTarArchiveEntry *entry)
 				outFileName: outFileName])
 			goto outer_loop_end;
 
+		stream = [_archive streamForReadingCurrentEntry];
 		output = [OFFile fileWithPath: outFileName
 					 mode: @"w"];
 		setPermissions(outFileName, entry);
-
-		stream = [_archive streamForReadingCurrentEntry];
 
 		while (![stream isAtEndOfStream]) {
 			ssize_t length = [app copyBlockFromStream: stream
@@ -386,7 +355,7 @@ outer_loop_end:
 - (void)printFiles: (OFArray OF_GENERIC(OFString *) *)files_
 {
 	OFMutableSet *files;
-	OFTarArchiveEntry *entry;
+	OFLHAArchiveEntry *entry;
 
 	if ([files_ count] < 1) {
 		[of_stderr writeLine: OF_LOCALIZED(@"print_no_file_specified",
@@ -431,7 +400,6 @@ outer_loop_end:
 		app->_exitStatus = 1;
 	}
 }
-
 - (void)addFiles: (OFArray OF_GENERIC(OFString *) *)files
 {
 	OFFileManager *fileManager = [OFFileManager defaultManager];
@@ -447,7 +415,7 @@ outer_loop_end:
 		void *pool = objc_autoreleasePoolPush();
 		of_file_attributes_t attributes;
 		of_file_type_t type;
-		OFMutableTarArchiveEntry *entry;
+		OFMutableLHAArchiveEntry *entry;
 		OFStream *output;
 
 		if (app->_outputLevel >= 0)
@@ -457,39 +425,30 @@ outer_loop_end:
 
 		attributes = [fileManager attributesOfItemAtPath: fileName];
 		type = [attributes fileType];
-		entry = [OFMutableTarArchiveEntry entryWithFileName: fileName];
+		entry = [OFMutableLHAArchiveEntry entryWithFileName: fileName];
 
 #ifdef OF_FILE_MANAGER_SUPPORTS_PERMISSIONS
-		[entry setMode: [attributes filePOSIXPermissions]];
+		[entry setMode: [OFNumber numberWithUInt16:
+		    [attributes filePOSIXPermissions]]];
 #endif
-		[entry setSize: [attributes fileSize]];
-		[entry setModificationDate: [attributes fileModificationDate]];
+		[entry setDate: [attributes fileModificationDate]];
 
 #ifdef OF_FILE_MANAGER_SUPPORTS_OWNER
-		[entry setUID: [attributes filePOSIXUID]];
-		[entry setGID: [attributes filePOSIXGID]];
+		[entry setUID: [OFNumber numberWithUInt16:
+		    [attributes filePOSIXUID]]];
+		[entry setGID: [OFNumber numberWithUInt16:
+		    [attributes filePOSIXGID]]];
 		[entry setOwner: [attributes fileOwner]];
 		[entry setGroup: [attributes fileGroup]];
 #endif
 
-		if ([type isEqual: of_file_type_regular])
-			[entry setType: OF_TAR_ARCHIVE_ENTRY_TYPE_FILE];
-		else if ([type isEqual: of_file_type_directory]) {
-			[entry setType: OF_TAR_ARCHIVE_ENTRY_TYPE_DIRECTORY];
-			[entry setSize: 0];
-		} else if ([type isEqual: of_file_type_symbolic_link]) {
-			[entry setType: OF_TAR_ARCHIVE_ENTRY_TYPE_SYMLINK];
-			[entry setTargetFileName:
-			    [attributes fileSymbolicLinkDestination]];
-			[entry setSize: 0];
-		}
-
-		[entry makeImmutable];
+		if ([type isEqual: of_file_type_directory])
+			[entry setCompressionMethod: @"-lhd-"];
 
 		output = [_archive streamForWritingEntry: entry];
 
-		if ([entry type] == OF_TAR_ARCHIVE_ENTRY_TYPE_FILE) {
-			uint64_t written = 0, size = [entry size];
+		if ([type isEqual: of_file_type_regular]) {
+			uintmax_t written = 0, size = [attributes fileSize];
 			int8_t percent = -1, newPercent;
 
 			OFFile *input = [OFFile fileWithPath: fileName

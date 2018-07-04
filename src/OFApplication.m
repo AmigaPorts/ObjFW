@@ -17,6 +17,8 @@
 
 #include "config.h"
 
+#define OF_APPLICATION_M
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,13 +51,9 @@
 # include <crt_externs.h>
 #elif defined(OF_WINDOWS)
 # include <windows.h>
-
 extern int _CRT_glob;
 extern void __wgetmainargs(int *, wchar_t ***, wchar_t ***, int, int *);
 #elif defined(OF_AMIGAOS)
-# ifdef OF_AMIGAOS_M68K
-#  define INTUITION_CLASSES_H
-# endif
 # include <proto/exec.h>
 # include <proto/dos.h>
 #elif !defined(OF_IOS)
@@ -149,7 +147,7 @@ of_application_main(int *argc, char **argv[],
 
 @implementation OFApplication
 @synthesize programName = _programName, arguments = _arguments;
-@synthesize environment = _environment;
+@synthesize environment = _environment, activeSandbox = _activeSandbox;
 
 + (OFApplication *)sharedApplication
 {
@@ -574,6 +572,7 @@ of_application_main(int *argc, char **argv[],
 	void *pool = objc_autoreleasePoolPush();
 	const char *promises = [[sandbox pledgeString]
 	    cStringWithEncoding: [OFLocalization encoding]];
+	OFSandbox *oldSandbox;
 
 	if (pledge(promises, NULL) != 0)
 		@throw [OFSandboxActivationFailedException
@@ -581,6 +580,10 @@ of_application_main(int *argc, char **argv[],
 				   errNo: errno];
 
 	objc_autoreleasePoolPop(pool);
+
+	oldSandbox = _activeSandbox;
+	_activeSandbox = [sandbox retain];
+	[oldSandbox release];
 # endif
 }
 #endif

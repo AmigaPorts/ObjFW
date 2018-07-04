@@ -112,11 +112,9 @@ addPage(void)
 		@throw [OFOutOfMemoryException
 		    exceptionWithRequestedSize: sizeof(*page)];
 
-	if ((page->map = malloc(mapSize)) == NULL)
+	if ((page->map = calloc(1, mapSize)) == NULL)
 		@throw [OFOutOfMemoryException
 		    exceptionWithRequestedSize: mapSize];
-
-	of_explicit_memset(page->map, 0, mapSize);
 
 	page->page = mapPages(1);
 	of_explicit_memset(page->page, 0, pageSize);
@@ -457,6 +455,27 @@ freeMemory(struct page *page, void *pointer, size_t bytes)
 	return [[OFSecureData alloc] initWithItems: _items
 					  itemSize: _itemSize
 					     count: _count];
+}
+
+- (bool)isEqual: (id)object
+{
+	OFData *otherData;
+	unsigned char diff;
+
+	if (![object isKindOfClass: [OFData class]])
+		return false;
+
+	otherData = object;
+
+	if (otherData->_count != _count || otherData->_itemSize != _itemSize)
+		return false;
+
+	diff = 0;
+
+	for (size_t i = 0; i < _count * _itemSize; i++)
+		diff |= otherData->_items[i] ^ _items[i];
+
+	return (diff == 0);
 }
 
 - (OFString *)description

@@ -35,7 +35,7 @@
 
 #import "crc32.h"
 
-#import "OFChecksumFailedException.h"
+#import "OFChecksumMismatchException.h"
 #import "OFInvalidArgumentException.h"
 #import "OFInvalidFormatException.h"
 #import "OFNotImplementedException.h"
@@ -43,6 +43,7 @@
 #import "OFOpenItemFailedException.h"
 #import "OFOutOfRangeException.h"
 #import "OFSeekFailedException.h"
+#import "OFTruncatedDataException.h"
 #import "OFUnsupportedVersionException.h"
 
 /*
@@ -75,15 +76,16 @@
 
 @interface OFZIPArchive_FileReadStream: OFStream
 {
-	OFStream *_stream, *_decompressedStream;
+	OF_KINDOF(OFStream *) _stream;
+	OF_KINDOF(OFStream *) _decompressedStream;
 	OFZIPArchiveEntry *_entry;
 	uint64_t _toRead;
 	uint32_t _CRC32;
 	bool _atEndOfStream;
 }
 
-- (instancetype)initWithStream: (OFStream *)stream
-			 entry: (OFZIPArchiveEntry *)entry;
+- (instancetype)of_initWithStream: (OFStream *)stream
+			    entry: (OFZIPArchiveEntry *)entry;
 @end
 
 @interface OFZIPArchive_FileWriteStream: OFStream
@@ -463,8 +465,8 @@ seekOrThrowInvalidFormat(OFSeekableStream *stream,
 	}
 
 	_lastReturnedStream = [[OFZIPArchive_FileReadStream alloc]
-	     initWithStream: _stream
-		      entry: entry];
+	     of_initWithStream: _stream
+			 entry: entry];
 
 	objc_autoreleasePoolPop(pool);
 
@@ -728,8 +730,8 @@ seekOrThrowInvalidFormat(OFSeekableStream *stream,
 @end
 
 @implementation OFZIPArchive_FileReadStream
-- (instancetype)initWithStream: (OFStream *)stream
-			 entry: (OFZIPArchiveEntry *)entry
+- (instancetype)of_initWithStream: (OFStream *)stream
+			    entry: (OFZIPArchiveEntry *)entry
 {
 	self = [super init];
 
@@ -778,6 +780,9 @@ seekOrThrowInvalidFormat(OFSeekableStream *stream,
 
 - (bool)lowlevelIsAtEndOfStream
 {
+	if (_stream == nil)
+		@throw [OFNotOpenException exceptionWithObject: self];
+
 	return _atEndOfStream;
 }
 
@@ -792,6 +797,10 @@ seekOrThrowInvalidFormat(OFSeekableStream *stream,
 	if (_atEndOfStream)
 		return 0;
 
+	if ([_stream isAtEndOfStream] &&
+	    ![_decompressedStream hasDataInReadBuffer])
+		@throw [OFTruncatedDataException exception];
+
 #if SIZE_MAX >= UINT64_MAX
 	if (length > UINT64_MAX)
 		@throw [OFOutOfRangeException exception];
@@ -803,23 +812,45 @@ seekOrThrowInvalidFormat(OFSeekableStream *stream,
 	ret = [_decompressedStream readIntoBuffer: buffer
 					   length: length];
 
-	if (ret == 0)
-		_atEndOfStream = true;
-
 	_toRead -= ret;
 	_CRC32 = of_crc32(_CRC32, buffer, ret);
 
-	if (_toRead == 0)
-		if (~_CRC32 != [_entry CRC32])
-			@throw [OFChecksumFailedException exception];
+	if (_toRead == 0) {
+		_atEndOfStream = true;
+
+		if (~_CRC32 != [_entry CRC32]) {
+			OFString *actualChecksum = [OFString stringWithFormat:
+			    @"%08" PRIX32, ~_CRC32];
+			OFString *expectedChecksum = [OFString stringWithFormat:
+			    @"%08" PRIX32, [_entry CRC32]];
+
+			@throw [OFChecksumMismatchException
+			    exceptionWithActualChecksum: actualChecksum
+				       expectedChecksum: expectedChecksum];
+		}
+	}
 
 	return ret;
+}
+
+- (bool)hasDataInReadBuffer
+{
+	return ([super hasDataInReadBuffer] ||
+	    [_decompressedStream hasDataInReadBuffer]);
+}
+
+- (int)fileDescriptorForReading
+{
+	return [_decompressedStream fileDescriptorForReading];
 }
 
 - (void)close
 {
 	[_stream release];
 	_stream = nil;
+
+	[_decompressedStream release];
+	_decompressedStream = nil;
 
 	[super close];
 }

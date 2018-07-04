@@ -17,12 +17,21 @@
 
 #include "config.h"
 
-#import "OFChecksumFailedException.h"
-#import "OFString.h"
+#import "crc16.h"
 
-@implementation OFChecksumFailedException
-- (OFString *)description
+#define CRC16_MAGIC 0xA001
+
+uint16_t
+of_crc16(uint16_t crc, const void *bytes_, size_t length)
 {
-	return @"Checksum mismatch!";
+	const unsigned char *bytes = bytes_;
+
+	for (size_t i = 0; i < length; i++) {
+		crc ^= bytes[i];
+
+		for (uint8_t j = 0; j < 8; j++)
+			crc = (crc >> 1) ^ (CRC16_MAGIC & (~(crc & 1) + 1));
+	}
+
+	return crc;
 }
-@end

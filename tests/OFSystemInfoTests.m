@@ -33,6 +33,14 @@ static OFString *module = @"OFSystemInfo";
 
 	PRINT(GREEN, @"Number of CPUs: %zd", [OFSystemInfo numberOfCPUs]);
 
+	PRINT(GREEN, @"ObjFW version: %@", [OFSystemInfo ObjFWVersion]);
+
+	PRINT(GREEN, @"ObjFW version major: %u",
+	    [OFSystemInfo ObjFWVersionMajor]);
+
+	PRINT(GREEN, @"ObjFW version minor: %u",
+	    [OFSystemInfo ObjFWVersionMinor]);
+
 	PRINT(GREEN, @"Operating system name: %@",
 	    [OFSystemInfo operatingSystemName]);
 
@@ -42,7 +50,7 @@ static OFString *module = @"OFSystemInfo";
 #ifdef OF_HAVE_FILES
 	PRINT(GREEN, @"User data path: %@", [OFSystemInfo userDataPath]);
 
-	PRINT(GREEN, @"User config path: %@", [OFSystemInfo userDataPath]);
+	PRINT(GREEN, @"User config path: %@", [OFSystemInfo userConfigPath]);
 #endif
 
 	PRINT(GREEN, @"CPU vendor: %@", [OFSystemInfo CPUVendor]);

@@ -24,13 +24,15 @@
 #include <sys/time.h>
 
 #import "OFDate.h"
-#import "OFString.h"
+#import "OFData.h"
 #import "OFDictionary.h"
-#import "OFXMLElement.h"
+#import "OFMessagePackExtension.h"
 #ifdef OF_HAVE_THREADS
 # import "OFMutex.h"
 #endif
+#import "OFString.h"
 #import "OFSystemInfo.h"
+#import "OFXMLElement.h"
 
 #import "OFInitializationFailedException.h"
 #import "OFInvalidArgumentException.h"
@@ -38,6 +40,11 @@
 #import "OFOutOfRangeException.h"
 
 #import "of_strptime.h"
+
+#ifdef OF_AMIGAOS_M68K
+/* amiga-gcc does not have trunc() */
+# define trunc(x) ((int64_t)(x))
+#endif
 
 #if (!defined(HAVE_GMTIME_R) || !defined(HAVE_LOCALTIME_R)) && \
     defined(OF_HAVE_THREADS)
@@ -49,7 +56,7 @@ static OFMutex *mutex;
 	time_t seconds = (time_t)_seconds;				\
 	struct tm tm;							\
 									\
-	if (seconds != floor(_seconds))					\
+	if (seconds != trunc(_seconds))					\
 		@throw [OFOutOfRangeException exception];		\
 									\
 	if (gmtime_r(&seconds, &tm) == NULL)				\
@@ -60,7 +67,7 @@ static OFMutex *mutex;
 	time_t seconds = (time_t)_seconds;				\
 	struct tm tm;							\
 									\
-	if (seconds != floor(_seconds))					\
+	if (seconds != trunc(_seconds))					\
 		@throw [OFOutOfRangeException exception];		\
 									\
 	if (localtime_r(&seconds, &tm) == NULL)				\
@@ -73,7 +80,7 @@ static OFMutex *mutex;
 	time_t seconds = (time_t)_seconds;				\
 	struct tm *tm;							\
 									\
-	if (seconds != floor(_seconds))					\
+	if (seconds != trunc(_seconds))					\
 		@throw [OFOutOfRangeException exception];		\
 									\
 	[mutex lock];							\
@@ -90,7 +97,7 @@ static OFMutex *mutex;
 	time_t seconds = (time_t)_seconds;				\
 	struct tm *tm;							\
 									\
-	if (seconds != floor(_seconds))					\
+	if (seconds != trunc(_seconds))					\
 		@throw [OFOutOfRangeException exception];		\
 									\
 	[mutex lock];							\
@@ -108,7 +115,7 @@ static OFMutex *mutex;
 	time_t seconds = (time_t)_seconds;				\
 	struct tm *tm;							\
 									\
-	if (seconds != floor(_seconds))					\
+	if (seconds != trunc(_seconds))					\
 		@throw [OFOutOfRangeException exception];		\
 									\
 	if ((tm = gmtime(&seconds)) == NULL)				\
@@ -119,7 +126,7 @@ static OFMutex *mutex;
 	time_t seconds = (time_t)_seconds;				\
 	struct tm *tm;							\
 									\
-	if (seconds != floor(_seconds))					\
+	if (seconds != trunc(_seconds))					\
 		@throw [OFOutOfRangeException exception];		\
 									\
 	if ((tm = localtime(&seconds)) == NULL)				\
@@ -442,9 +449,64 @@ tmAndTzToTime(struct tm *tm, int16_t *tz)
 	return [element autorelease];
 }
 
+- (OFData *)messagePackRepresentation
+{
+	void *pool = objc_autoreleasePoolPush();
+	int64_t seconds = (int64_t)_seconds;
+	uint32_t nanoseconds = (_seconds - trunc(_seconds)) * 1000000000;
+	OFData *ret;
+
+	if (seconds >= 0 && seconds < 0x400000000) {
+		if (seconds <= UINT32_MAX && nanoseconds == 0) {
+			uint32_t seconds32 = (uint32_t)seconds;
+			OFData *data;
+
+			seconds32 = OF_BSWAP32_IF_LE(seconds32);
+			data = [OFData dataWithItems: &seconds32
+					       count: sizeof(seconds32)];
+
+			ret = [[OFMessagePackExtension
+			    extensionWithType: -1
+					 data: data] messagePackRepresentation];
+		} else {
+			uint64_t combined = ((uint64_t)nanoseconds << 34) |
+			    (uint64_t)seconds;
+			OFData *data;
+
+			combined = OF_BSWAP64_IF_LE(combined);
+			data = [OFData dataWithItems: &combined
+					       count: sizeof(combined)];
+
+			ret = [[OFMessagePackExtension
+			    extensionWithType: -1
+					 data: data] messagePackRepresentation];
+		}
+	} else {
+		OFMutableData *data = [OFMutableData dataWithCapacity: 12];
+
+		seconds = OF_BSWAP64_IF_LE(seconds);
+		nanoseconds = OF_BSWAP32_IF_LE(nanoseconds);
+
+		[data addItems: &nanoseconds
+			 count: sizeof(nanoseconds)];
+		[data addItems: &seconds
+			 count: sizeof(seconds)];
+
+		ret = [[OFMessagePackExtension
+		    extensionWithType: -1
+				 data: data] messagePackRepresentation];
+	}
+
+	[ret retain];
+
+	objc_autoreleasePoolPop(pool);
+
+	return [ret autorelease];
+}
+
 - (uint32_t)microsecond
 {
-	return (uint32_t)((_seconds - floor(_seconds)) * 1000000);
+	return (uint32_t)((_seconds - trunc(_seconds)) * 1000000);
 }
 
 - (uint8_t)second
@@ -534,7 +596,7 @@ tmAndTzToTime(struct tm *tm, int16_t *tz)
 	wchar_t *buffer;
 #endif
 
-	if (seconds != floor(_seconds))
+	if (seconds != trunc(_seconds))
 		@throw [OFOutOfRangeException exception];
 
 #ifdef HAVE_GMTIME_R
@@ -594,7 +656,7 @@ tmAndTzToTime(struct tm *tm, int16_t *tz)
 	wchar_t *buffer;
 #endif
 
-	if (seconds != floor(_seconds))
+	if (seconds != trunc(_seconds))
 		@throw [OFOutOfRangeException exception];
 
 #ifdef HAVE_LOCALTIME_R

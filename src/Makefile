@@ -35,6 +35,8 @@ SRCS = OFApplication.m			\
        OFInflateStream.m		\
        OFIntrospection.m		\
        OFInvocation.m			\
+       OFLHAArchive.m			\
+       OFLHAArchiveEntry.m		\
        OFList.m				\
        OFLocalization.m			\
        OFMapTable.m			\
@@ -44,6 +46,7 @@ SRCS = OFApplication.m			\
        OFMutableArray.m			\
        OFMutableData.m			\
        OFMutableDictionary.m		\
+       OFMutableLHAArchiveEntry.m	\
        OFMutablePair.m			\
        OFMutableSet.m			\
        OFMutableString.m		\
@@ -106,7 +109,9 @@ SRCS = OFApplication.m			\
        OFZIPArchive.m			\
        OFZIPArchiveEntry.m		\
        base64.m				\
+       crc16.m				\
        crc32.m				\
+       huffman_tree.m			\
        of_asprintf.m			\
        of_strptime.m			\
        pbkdf2.m				\
@@ -169,6 +174,7 @@ SRCS += OFArray_adjacent.m		\
 	OFCharacterSet_range.m		\
 	OFCountedSet_hashtable.m	\
 	OFDictionary_hashtable.m	\
+	OFLHAArchive_LHStream.m		\
 	OFMutableArray_adjacent.m	\
 	OFMutableDictionary_hashtable.m	\
 	OFMutableSet_hashtable.m	\
