@@ -127,7 +127,9 @@ OF_ASSUME_NONNULL_BEGIN
 	OFMutableDictionary OF_GENERIC(OFString *, OFString *) *_environment;
 	int *_argc;
 	char ***_argv;
+#ifdef OF_APPLICATION_M
 @public
+#endif
 	id <OFApplicationDelegate> _Nullable _delegate;
 	void (*_Nullable _SIGINTHandler)(id, SEL);
 #ifndef OF_WINDOWS
@@ -135,6 +137,7 @@ OF_ASSUME_NONNULL_BEGIN
 	void (*_Nullable _SIGUSR1Handler)(id, SEL);
 	void (*_Nullable _SIGUSR2Handler)(id, SEL);
 #endif
+	OFSandbox *_Nullable _activeSandbox;
 }
 
 #ifdef OF_HAVE_CLASS_PROPERTIES
@@ -168,6 +171,11 @@ OF_ASSUME_NONNULL_BEGIN
  */
 @property OF_NULLABLE_PROPERTY (assign, nonatomic)
     id <OFApplicationDelegate> delegate;
+
+/*!
+ * @brief The sandbox currently active for this application.
+ */
+@property OF_NULLABLE_PROPERTY (readonly, nonatomic) OFSandbox *activeSandbox;
 
 /*!
  * @brief Returns the only OFApplication instance in the application.

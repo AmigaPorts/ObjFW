@@ -58,6 +58,8 @@
 #import "OFInflateStream.h"
 #import "OFInflate64Stream.h"
 #import "OFGZIPStream.h"
+#import "OFLHAArchive.h"
+#import "OFLHAArchiveEntry.h"
 #import "OFTarArchive.h"
 #import "OFTarArchiveEntry.h"
 #import "OFZIPArchive.h"
@@ -130,7 +132,7 @@
 # import "OFBindFailedException.h"
 #endif
 #import "OFChangeCurrentDirectoryPathFailedException.h"
-#import "OFChecksumFailedException.h"
+#import "OFChecksumMismatchException.h"
 #ifdef OF_HAVE_THREADS
 # import "OFConditionBroadcastFailedException.h"
 # import "OFConditionSignalFailedException.h"
@@ -220,7 +222,9 @@
 #endif
 
 #import "base64.h"
+#import "crc16.h"
 #import "crc32.h"
+#import "huffman_tree.h"
 #import "instance.h"
 #import "of_asprintf.h"
 #import "of_strptime.h"

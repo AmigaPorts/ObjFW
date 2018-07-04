@@ -29,13 +29,13 @@
 #import "OFString.h"
 
 #import "ZIPArchive.h"
-#import "OFZIP.h"
+#import "OFArc.h"
 
 #import "OFInvalidFormatException.h"
 #import "OFOpenItemFailedException.h"
 #import "OFOutOfRangeException.h"
 
-static OFZIP *app;
+static OFArc *app;
 
 static void
 setPermissions(OFString *path, OFZIPArchiveEntry *entry)
@@ -60,7 +60,7 @@ setPermissions(OFString *path, OFZIPArchiveEntry *entry)
 + (void)initialize
 {
 	if (self == [ZIPArchive class])
-		app = (OFZIP *)[[OFApplication sharedApplication] delegate];
+		app = (OFArc *)[[OFApplication sharedApplication] delegate];
 }
 
 + (instancetype)archiveWithStream: (OF_KINDOF(OFStream *))stream
@@ -110,8 +110,11 @@ setPermissions(OFString *path, OFZIPArchiveEntry *entry)
 			OFString *uncompressedSize = [OFString
 			    stringWithFormat: @"%" PRIu64,
 					      [entry uncompressedSize]];
+			OFString *compressionMethod =
+			    of_zip_archive_entry_compression_method_to_string(
+			    [entry compressionMethod]);
 			OFString *CRC32 = [OFString
-			    stringWithFormat: @"%08X", [entry CRC32]];
+			    stringWithFormat: @"%08" PRIX32, [entry CRC32]];
 			OFString *modificationDate = [[entry modificationDate]
 			    localDateStringWithFormat: @"%Y-%m-%d %H:%M:%S"];
 
@@ -125,6 +128,11 @@ setPermissions(OFString *path, OFZIPArchiveEntry *entry)
 			    @"list_uncompressed_size",
 			    @"Uncompressed: %[size] bytes",
 			    @"size", uncompressedSize)];
+			[of_stdout writeString: @"\t"];
+			[of_stdout writeLine: OF_LOCALIZED(
+			    @"list_compression_method",
+			    @"Compression method: %[method]",
+			    @"method", compressionMethod)];
 			[of_stdout writeString: @"\t"];
 			[of_stdout writeLine: OF_LOCALIZED(@"list_crc32",
 			    @"CRC32: %[crc32]",
@@ -301,7 +309,7 @@ setPermissions(OFString *path, OFZIPArchiveEntry *entry)
 			[of_stdout writeString: @"\r"];
 			[of_stdout writeLine: OF_LOCALIZED(
 			    @"extracting_file_done",
-			    @"Extracting %[file]... done\n",
+			    @"Extracting %[file]... done",
 			    @"file", fileName)];
 		}
 

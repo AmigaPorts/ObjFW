@@ -29,8 +29,9 @@
 #import "OFStdIOStream.h"
 #import "OFURL.h"
 
-#import "OFZIP.h"
+#import "OFArc.h"
 #import "GZIPArchive.h"
+#import "LHAArchive.h"
 #import "TarArchive.h"
 #import "ZIPArchive.h"
 
@@ -46,7 +47,7 @@
 
 #define BUFFER_SIZE 4096
 
-OF_APPLICATION_DELEGATE(OFZIP)
+OF_APPLICATION_DELEGATE(OFArc)
 
 static void
 help(OFStream *stream, bool full, int status)
@@ -73,7 +74,8 @@ help(OFStream *stream, bool full, int status)
 		    @"archive\n"
 		    @"    -q  --quiet       Quiet mode (no output, except "
 		    @"errors)\n"
-		    @"    -t  --type        Archive type (gz, tar, tgz, zip)\n"
+		    @"    -t  --type        Archive type (gz, lha, tar, tgz, "
+		    @"zip)\n"
 		    @"    -v  --verbose     Verbose output for file list\n"
 		    @"    -x  --extract     Extract files")];
 	}
@@ -146,7 +148,7 @@ writingNotSupported(OFString *type)
 	    @"type", type)];
 }
 
-@implementation OFZIP
+@implementation OFArc
 - (void)applicationDidFinishLaunching
 {
 	OFString *outputDir = nil, *encodingString = nil, *type = nil;
@@ -168,7 +170,7 @@ writingNotSupported(OFString *type)
 	};
 	OFOptionsParser *optionsParser;
 	of_unichar_t option, mode = '\0';
-	of_string_encoding_t encoding = OF_STRING_ENCODING_UTF_8;
+	of_string_encoding_t encoding = OF_STRING_ENCODING_AUTODETECT;
 	OFArray OF_GENERIC(OFString *) *remainingArguments, *files;
 	id <Archive> archive;
 
@@ -191,7 +193,7 @@ writingNotSupported(OFString *type)
 #ifndef OF_AMIGAOS
 	[OFLocalization addLanguageDirectory: @LANGUAGE_DIR];
 #else
-	[OFLocalization addLanguageDirectory: @"PROGDIR:/share/ofzip/lang"];
+	[OFLocalization addLanguageDirectory: @"PROGDIR:/share/ofarc/lang"];
 #endif
 
 	optionsParser = [OFOptionsParser parserWithOptions: options];
@@ -442,6 +444,8 @@ writingNotSupported(OFString *type)
 			type = @"tgz";
 		else if ([path hasSuffix: @".gz"] || [path hasSuffix: @".GZ"])
 			type = @"gz";
+		else if ([path hasSuffix: @".lha"] || [path hasSuffix: @".lzh"])
+			type = @"lha";
 		else if ([path hasSuffix: @".tar"] || [path hasSuffix: @".TAR"])
 			type = @"tar";
 		else
@@ -453,6 +457,10 @@ writingNotSupported(OFString *type)
 			archive = [GZIPArchive archiveWithStream: file
 							    mode: modeString
 							encoding: encoding];
+		else if ([type isEqual: @"lha"])
+			archive = [LHAArchive archiveWithStream: file
+							   mode: modeString
+						       encoding: encoding];
 		else if ([type isEqual: @"tar"])
 			archive = [TarArchive archiveWithStream: file
 							   mode: modeString

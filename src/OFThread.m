@@ -33,9 +33,6 @@
 #include "platform.h"
 
 #ifdef OF_AMIGAOS
-# ifdef OF_AMIGAOS_M68K
-#  define INTUITION_CLASSES_H
-# endif
 # include <proto/dos.h>
 #endif
 
@@ -204,7 +201,7 @@ callMain(id object)
 	rqtp.tv_sec = (time_t)timeInterval;
 	rqtp.tv_nsec = lrint((timeInterval - rqtp.tv_sec) * 1000000000);
 
-	if (rqtp.tv_sec != floor(timeInterval))
+	if (rqtp.tv_sec != trunc(timeInterval))
 		@throw [OFOutOfRangeException exception];
 
 	nanosleep(&rqtp, NULL);
@@ -233,7 +230,7 @@ callMain(id object)
 
 	sleep((unsigned int)timeInterval);
 	usleep((unsigned int)lrint(
-	    (timeInterval - floor(timeInterval)) * 1000000));
+	    (timeInterval - trunc(timeInterval)) * 1000000));
 #endif
 }
 

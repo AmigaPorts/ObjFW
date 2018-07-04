@@ -15,17 +15,20 @@
  * file.
  */
 
-#import "OFException.h"
+#ifndef __STDC_LIMIT_MACROS
+# define __STDC_LIMIT_MACROS
+#endif
+#ifndef __STDC_CONSTANT_MACROS
+# define __STDC_CONSTANT_MACROS
+#endif
 
-OF_ASSUME_NONNULL_BEGIN
+#import "macros.h"
 
-/*!
- * @class OFChecksumFailedException \
- *	  OFChecksumFailedException.h ObjFW/OFChecksumFailedException.h
- *
- * @brief An exception indicating that a checksum did not match.
- */
-@interface OFChecksumFailedException: OFException
-@end
-
-OF_ASSUME_NONNULL_END
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern uint16_t of_crc16(uint16_t crc, const void *_Nonnull bytes,
+    size_t length);
+#ifdef __cplusplus
+}
+#endif

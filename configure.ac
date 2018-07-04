@@ -3,6 +3,8 @@ AC_CONFIG_SRCDIR(src)
 AC_CONFIG_AUX_DIR(build-aux)
 AC_CONFIG_MACRO_DIR(build-aux/m4)
 
+AC_DEFINE(OBJFW_VERSION_MAJOR, 0, [The major version of ObjFW])
+AC_DEFINE(OBJFW_VERSION_MINOR, 91, [The minor version of ObjFW])
 dnl This may only be set to 0.91 once 0.91 is released
 AC_SUBST(BUNDLE_VERSION, 0.90.9900)
 AC_SUBST(BUNDLE_SHORT_VERSION, 0.90)
@@ -237,9 +239,9 @@ AX_CHECK_COMPILER_FLAGS(-std=gnu11, [
 
 AX_CHECK_COMPILER_FLAGS(-pipe, [OBJCFLAGS="$OBJCFLAGS -pipe"])
 AX_CHECK_COMPILER_FLAGS(-fno-common, [OBJCFLAGS="$OBJCFLAGS -fno-common"])
-AX_CHECK_COMPILER_FLAGS(-fno-constant-cfstrings, [
-	OBJCFLAGS="$OBJCFLAGS -fno-constant-cfstrings"
-	AC_SUBST(NO_CONST_CFSTRINGS, "-fno-constant-cfstrings")
+AX_CHECK_COMPILER_FLAGS(-Xclang -fno-constant-cfstrings, [
+	OBJCFLAGS="$OBJCFLAGS -Xclang -fno-constant-cfstrings"
+	AC_SUBST(NO_CONST_CFSTRINGS, "-Xclang -fno-constant-cfstrings")
 ])
 AX_CHECK_COMPILER_FLAGS([-Wsign-compare -Werror],
 	[OBJCFLAGS="$OBJCFLAGS -Wsign-compare"])
@@ -418,7 +420,7 @@ case "$objc_runtime" in
 		AC_MSG_CHECKING([whether -fobjc-runtime=objfw is supported])
 
 		old_OBJCFLAGS="$OBJCFLAGS"
-		OBJCFLAGS="$OBJCFLAGS -fobjc-runtime=objfw"
+		OBJCFLAGS="$OBJCFLAGS -Xclang -fobjc-runtime=objfw"
 		AC_TRY_LINK([
 			#ifdef __has_attribute
 			# if __has_attribute(objc_root_class)
@@ -448,7 +450,7 @@ case "$objc_runtime" in
 		], [
 			[Test test];
 		], [
-			RUNTIME_FLAGS="-fobjc-runtime=objfw"
+			RUNTIME_FLAGS="-Xclang -fobjc-runtime=objfw"
 			AC_MSG_RESULT(yes)
 		], [
 			RUNTIME_FLAGS="-fgnu-runtime"
@@ -902,8 +904,9 @@ AS_IF([test x"$enable_threads" != x"no"], [
 	*)
 		AC_MSG_RESULT(POSIX)
 
-		AX_CHECK_COMPILER_FLAGS(-pthread, [
-			CPPFLAGS="$CPPFLAGS -pthread"
+		dnl Use -Wp, as we only use it for the preprocessor.
+		AX_CHECK_COMPILER_FLAGS([-Wp,-pthread], [
+			CPPFLAGS="$CPPFLAGS -Wp,-pthread"
 		], [
 			CPPFLAGS="$CPPFLAGS -D_REENTRANT -D_THREAD_SAFE"
 		])
@@ -942,6 +945,7 @@ AS_IF([test x"$enable_threads" != x"no"], [
 				[Whether we have sched_yield()])
 		])
 
+		AC_CHECK_FUNCS(pthread_attr_getschedpolicy)
 		AC_CHECK_FUNCS(pthread_attr_setinheritsched)
 
 		AC_CHECK_HEADERS(pthread_np.h, [], [], [#include <pthread.h>])
@@ -1112,8 +1116,8 @@ AC_ARG_ENABLE(files,
 AS_IF([test x"$enable_files" != x"no"], [
 	AC_DEFINE(OF_HAVE_FILES, 1, [Whether we have files])
 	AC_SUBST(USE_SRCS_FILES, '${SRCS_FILES}')
+	AC_SUBST(OFARC, "ofarc")
 	AC_SUBST(OFHASH, "ofhash")
-	AC_SUBST(OFZIP, "ofzip")
 
 	case "$host_os" in
 		msdosdjgpp*)
@@ -1481,12 +1485,12 @@ dnl which in old glibc versions uses __block. This is worked around in the code
 dnl by providing a wrapper for unistd.h which takes care of this.
 AC_MSG_CHECKING(whether Objective C compiler supports blocks)
 old_OBJCFLAGS="$OBJCFLAGS"
-OBJCFLAGS="$OBJCFLAGS -fblocks"
+OBJCFLAGS="$OBJCFLAGS -Xclang -fblocks"
 AC_TRY_COMPILE([], [
 	int (^foo)(int bar);
 	foo = ^ (int bar) { return 0; }
 ], [
-	AC_SUBST(BLOCKS_FLAGS, "-fblocks")
+	AC_SUBST(BLOCKS_FLAGS, "-Xclang -fblocks")
 	AC_SUBST(OFBLOCKTESTS_M, "OFBlockTests.m")
 	AC_MSG_RESULT(yes)
 ], [

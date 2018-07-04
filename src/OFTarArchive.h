@@ -42,12 +42,12 @@ OF_ASSUME_NONNULL_BEGIN
 }
 
 /*!
- * @brief The encoding to use for the archive.
+ * @brief The encoding to use for the archive. Defaults to UTF-8.
  */
 @property (nonatomic) of_string_encoding_t encoding;
 
 /*!
- * @brief A stream for reading the current entry
+ * @brief A stream for reading the current entry.
  *
  * @note This is only available in read mode.
  *
@@ -83,6 +83,8 @@ OF_ASSUME_NONNULL_BEGIN
 + (instancetype)archiveWithPath: (OFString *)path
 			   mode: (OFString *)mode;
 #endif
+
+- (instancetype)init OF_UNAVAILABLE;
 
 /*!
  * @brief Initializes an already allocated OFTarArchive object with the

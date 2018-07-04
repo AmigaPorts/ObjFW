@@ -28,8 +28,11 @@ OF_ASSUME_NONNULL_BEGIN
  */
 @interface OFXMLAttribute: OFXMLNode
 {
+#if defined(OF_XML_ELEMENT_M) || defined(OF_XML_PARSER_M)
 @public
+#endif
 	OFString *_name, *_Nullable _namespace, *_stringValue;
+	bool _useDoubleQuotes;
 }
 
 /*!

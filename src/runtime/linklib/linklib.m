@@ -21,9 +21,6 @@
 #import "private.h"
 #import "macros.h"
 
-#ifdef OF_AMIGAOS_M68K
-#include <stabs.h>
-#endif
 #include <proto/exec.h>
 
 #import "inline.h"
@@ -31,6 +28,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef OF_AMIGAOS_M68K
+# include <stabs.h>
+#endif
 
 #ifdef HAVE_SJLJ_EXCEPTIONS
 extern int _Unwind_SjLj_RaiseException(void *);
@@ -57,14 +57,11 @@ extern void __deregister_frame_info(const void *);
 struct Library *ObjFWRTBase;
 void *__objc_class_name_Protocol;
 
-#ifdef OF_AMIGAOS_M68K
-ADD2INIT(__init_objc,0);
-void
-__init_objc(void)
-#else
-static void __attribute__((__constructor__))
-init(void)
+static void
+#ifndef OF_AMIGAOS_M68K
+    __attribute__((__constructor__))
 #endif
+ctor(void)
 {
 	static bool initialized = false;
 	struct objc_libc libc = {
@@ -74,7 +71,6 @@ init(void)
 		.free = free,
 		.vfprintf = vfprintf,
 		.fflush = fflush,
-		.exit = exit,
 		.abort = abort,
 #ifdef HAVE_SJLJ_EXCEPTIONS
 		._Unwind_SjLj_RaiseException = _Unwind_SjLj_RaiseException,
@@ -116,16 +112,21 @@ init(void)
 	initialized = true;
 }
 
-#ifdef OF_AMIGAOS_M68K
-ADD2EXIT(__exit_objc,-1); //beloc atexit handler 
-void
-__exit_objc(void)
+static void
+#ifndef OF_AMIGAOS_M68K
+    __attribute__((__destructor__))
 #else
-OF_DESTRUCTOR()
+    __attribute__((__unused__))
 #endif
+dtor(void)
 {
 	CloseLibrary(ObjFWRTBase);
 }
+
+#ifdef OF_AMIGAOS_M68K
+ADD2INIT(ctor, -2);
+ADD2EXIT(dtor, -2);
+#endif
 
 void
 __objc_exec_class(void *module)
@@ -134,9 +135,8 @@ __objc_exec_class(void *module)
 	 * The compiler generates constructors that call into this, so it is
 	 * possible that we are not set up yet when we get called.
 	 */
-#ifndef OF_AMIGAOS_M68K
-	init();
-#endif
+	ctor();
+
 	__objc_exec_class_m68k(module);
 }
 

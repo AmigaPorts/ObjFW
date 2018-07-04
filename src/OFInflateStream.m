@@ -24,21 +24,25 @@
 
 #include <assert.h>
 
-#ifndef INFLATE64
+#ifndef OF_INFLATE64_STREAM_M
 # import "OFInflateStream.h"
 #else
 # import "OFInflate64Stream.h"
 # define OFInflateStream OFInflate64Stream
 #endif
 
+#import "huffman_tree.h"
+
 #import "OFInitializationFailedException.h"
 #import "OFInvalidFormatException.h"
 #import "OFNotOpenException.h"
 #import "OFOutOfMemoryException.h"
 
-#define BUFFER_SIZE		  OF_INFLATE_STREAM_BUFFER_SIZE
-
-#define MAX_BITS 15
+#ifndef OF_INFLATE64_STREAM_M
+# define BUFFER_SIZE OF_INFLATE_STREAM_BUFFER_SIZE
+#else
+# define BUFFER_SIZE OF_INFLATE64_STREAM_BUFFER_SIZE
+#endif
 
 enum state {
 	BLOCK_HEADER,
@@ -57,12 +61,7 @@ enum huffman_state {
 	PROCESS_PAIR
 };
 
-struct huffman_tree {
-	struct huffman_tree *leafs[2];
-	uint16_t value;
-};
-
-#ifndef INFLATE64
+#ifndef OF_INFLATE64_STREAM_M
 static const uint8_t numDistanceCodes = 30;
 static const uint8_t lengthCodes[29] = {
 	/* indices are -257, values -3 */
@@ -105,7 +104,7 @@ static const uint8_t distanceExtraBits[32] = {
 static const uint8_t codeLengthsOrder[19] = {
 	16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
 };
-static struct huffman_tree *fixedLitLenTree, *fixedDistTree;
+static struct of_huffman_tree *fixedLitLenTree, *fixedDistTree;
 
 static bool
 tryReadBits(OFInflateStream *stream, uint16_t *bits, uint8_t count)
@@ -114,7 +113,7 @@ tryReadBits(OFInflateStream *stream, uint16_t *bits, uint8_t count)
 
 	assert(stream->_savedBitsLength < count);
 
-	for (uint8_t i = stream->_savedBitsLength; i < count; i++) {
+	for (uint_fast8_t i = stream->_savedBitsLength; i < count; i++) {
 		if OF_UNLIKELY (stream->_bitIndex == 8) {
 			if (stream->_bufferIndex < stream->_bufferLength)
 				stream->_byte =
@@ -148,109 +147,6 @@ tryReadBits(OFInflateStream *stream, uint16_t *bits, uint8_t count)
 	return true;
 }
 
-static struct huffman_tree *
-newTree(void)
-{
-	struct huffman_tree *tree;
-
-	if ((tree = malloc(sizeof(*tree))) == NULL)
-		@throw [OFOutOfMemoryException
-		    exceptionWithRequestedSize: sizeof(*tree)];
-
-	tree->leafs[0] = tree->leafs[1] = NULL;
-	tree->value = 0xFFFF;
-
-	return tree;
-}
-
-static void
-treeInsert(struct huffman_tree *tree, uint16_t code, uint8_t length,
-    uint16_t value)
-{
-	while (length > 0) {
-		uint8_t bit;
-
-		length--;
-		bit = (code & (1 << length)) >> length;
-
-		if (tree->leafs[bit] == NULL)
-			tree->leafs[bit] = newTree();
-
-		tree = tree->leafs[bit];
-	}
-
-	tree->value = value;
-}
-
-static struct huffman_tree *
-constructTree(uint8_t lengths[], uint16_t count)
-{
-	struct huffman_tree *tree;
-	uint16_t lengthCount[MAX_BITS + 1] = { 0 };
-	uint16_t code, maxCode = 0, nextCode[MAX_BITS + 1];
-
-	for (uint16_t i = 0; i < count; i++) {
-		uint8_t length = lengths[i];
-
-		if OF_UNLIKELY (length > MAX_BITS)
-			@throw [OFInvalidFormatException exception];
-
-		if (length > 0) {
-			lengthCount[length]++;
-			maxCode = i;
-		}
-	}
-
-	code = 0;
-	for (size_t i = 1; i <= MAX_BITS; i++) {
-		code = (code + lengthCount[i - 1]) << 1;
-		nextCode[i] = code;
-	}
-
-	tree = newTree();
-
-	for (uint16_t i = 0; i <= maxCode; i++) {
-		uint8_t length = lengths[i];
-
-		if (length > 0)
-			treeInsert(tree, nextCode[length]++, length, i);
-	}
-
-	return tree;
-}
-
-static bool
-walkTree(OFInflateStream *stream, struct huffman_tree **tree, uint16_t *value)
-{
-	struct huffman_tree *iter = *tree;
-	uint16_t bits;
-
-	while (iter->value == 0xFFFF) {
-		if OF_UNLIKELY (!tryReadBits(stream, &bits, 1)) {
-			*tree = iter;
-			return false;
-		}
-
-		if OF_UNLIKELY (iter->leafs[bits] == NULL)
-			@throw [OFInvalidFormatException exception];
-
-		iter = iter->leafs[bits];
-	}
-
-	*value = iter->value;
-	return true;
-}
-
-static void
-releaseTree(struct huffman_tree *tree)
-{
-	for (uint8_t i = 0; i < 2; i++)
-		if OF_LIKELY (tree->leafs[i] != NULL)
-			releaseTree(tree->leafs[i]);
-
-	free(tree);
-}
-
 @implementation OFInflateStream
 + (void)initialize
 {
@@ -268,16 +164,15 @@ releaseTree(struct huffman_tree *tree)
 	for (uint16_t i = 280; i <= 287; i++)
 		lengths[i] = 8;
 
-	fixedLitLenTree = constructTree(lengths, 288);
+	fixedLitLenTree = of_huffman_tree_construct(lengths, 288);
 
 	for (uint16_t i = 0; i <= 31; i++)
 		lengths[i] = 5;
 
-	fixedDistTree = constructTree(lengths, 32);
+	fixedDistTree = of_huffman_tree_construct(lengths, 32);
 }
 
-#ifndef INFLATE64
-+ (instancetype)streamWithStream: (OFStream *)stream
++ (instancetype)streamWithStream: (OF_KINDOF(OFStream *))stream
 {
 	return [[[self alloc] initWithStream: stream] autorelease];
 }
@@ -287,19 +182,27 @@ releaseTree(struct huffman_tree *tree)
 	OF_INVALID_INIT_METHOD
 }
 
-- (instancetype)initWithStream: (OFStream *)stream
+- (instancetype)initWithStream: (OF_KINDOF(OFStream *))stream
 {
 	self = [super init];
 
-	_stream = [stream retain];
+	@try {
+		_stream = [stream retain];
 
-	/* 0-7 address the bit, 8 means fetch next byte */
-	_bitIndex = 8;
-#ifdef INFLATE64
-	_slidingWindowMask = 0xFFFF;
+		/* 0-7 address the bit, 8 means fetch next byte */
+		_bitIndex = 8;
+
+#ifdef OF_INFLATE64_STREAM_M
+		_slidingWindowMask = 0xFFFF;
 #else
-	_slidingWindowMask = 0x7FFF;
+		_slidingWindowMask = 0x7FFF;
 #endif
+		_slidingWindow = [self allocZeroedMemoryWithSize:
+		    _slidingWindowMask + 1];
+	} @catch (id e) {
+		[self release];
+		@throw e;
+	}
 
 	return self;
 }
@@ -310,27 +213,26 @@ releaseTree(struct huffman_tree *tree)
 
 	if (_state == HUFFMAN_TREE)
 		if (_context.huffmanTree.codeLenTree != NULL)
-			releaseTree(_context.huffmanTree.codeLenTree);
+			of_huffman_tree_release(
+			    _context.huffmanTree.codeLenTree);
 
 	if (_state == HUFFMAN_TREE || _state == HUFFMAN_BLOCK) {
 		if (_context.huffman.litLenTree != fixedLitLenTree)
-			releaseTree(_context.huffman.litLenTree);
+			of_huffman_tree_release(_context.huffman.litLenTree);
 		if (_context.huffman.distTree != fixedDistTree)
-			releaseTree(_context.huffman.distTree);
+			of_huffman_tree_release(_context.huffman.distTree);
 	}
 
 	[super dealloc];
 }
-#endif
 
 - (size_t)lowlevelReadIntoBuffer: (void *)buffer_
 			  length: (size_t)length
 {
-	uint8_t *buffer = buffer_;
-	uint16_t bits, tmp;
-	uint16_t value;
+	unsigned char *buffer = buffer_;
+	uint16_t bits, tmp, value;
 	size_t bytesWritten = 0;
-	uint8_t *slidingWindow;
+	unsigned char *slidingWindow;
 	uint16_t slidingWindowIndex;
 
 	if (_stream == nil)
@@ -346,6 +248,7 @@ start:
 			[_stream unreadFromBuffer: _buffer + _bufferIndex
 					   length: _bufferLength -
 						   _bufferIndex];
+			_bufferIndex = _bufferLength = 0;
 
 			_atEndOfStream = true;
 			return bytesWritten;
@@ -425,16 +328,9 @@ start:
 		tmp = (uint16_t)[_stream readIntoBuffer: buffer + bytesWritten
 						 length: tmp];
 
-		if OF_UNLIKELY (_slidingWindow == NULL) {
-			_slidingWindow =
-			    [self allocMemoryWithSize: _slidingWindowMask + 1];
-			/* Avoid leaking data */
-			memset(_slidingWindow, 0, _slidingWindowMask + 1);
-		}
-
 		slidingWindow = _slidingWindow;
 		slidingWindowIndex = _slidingWindowIndex;
-		for (uint16_t i = 0; i < tmp; i++) {
+		for (uint_fast16_t i = 0; i < tmp; i++) {
 			slidingWindow[slidingWindowIndex] =
 			    buffer[bytesWritten + i];
 			slidingWindowIndex = (slidingWindowIndex + 1) &
@@ -479,10 +375,9 @@ start:
 				CTX.codeLenCodesCount = bits;
 			}
 
-			if OF_LIKELY (CTX.lengths == NULL) {
-				CTX.lengths = [self allocMemoryWithSize: 19];
-				memset(CTX.lengths, 0, 19);
-			}
+			if OF_LIKELY (CTX.lengths == NULL)
+				CTX.lengths = [self
+				    allocZeroedMemoryWithSize: 19];
 
 			for (uint16_t i = CTX.receivedCount;
 			    i < CTX.codeLenCodesCount + 4; i++) {
@@ -494,7 +389,8 @@ start:
 				CTX.lengths[codeLengthsOrder[i]] = bits;
 			}
 
-			CTX.codeLenTree = constructTree(CTX.lengths, 19);
+			CTX.codeLenTree = of_huffman_tree_construct(
+			    CTX.lengths, 19);
 			CTX.treeIter = CTX.codeLenTree;
 
 			[self freeMemory: CTX.lengths];
@@ -512,8 +408,8 @@ start:
 			uint8_t j, count;
 
 			if OF_LIKELY (CTX.value == 0xFF) {
-				if OF_UNLIKELY (!walkTree(self, &CTX.treeIter,
-				    &value)) {
+				if OF_UNLIKELY (!of_huffman_tree_walk(self,
+				    tryReadBits, &CTX.treeIter, &value)) {
 					CTX.receivedCount = i;
 					return bytesWritten;
 				}
@@ -579,12 +475,12 @@ start:
 			CTX.value = 0xFF;
 		}
 
-		releaseTree(CTX.codeLenTree);
+		of_huffman_tree_release(CTX.codeLenTree);
 		CTX.codeLenTree = NULL;
 
-		CTX.litLenTree = constructTree(CTX.lengths,
+		CTX.litLenTree = of_huffman_tree_construct(CTX.lengths,
 		    CTX.litLenCodesCount + 257);
-		CTX.distTree = constructTree(
+		CTX.distTree = of_huffman_tree_construct(
 		    CTX.lengths + CTX.litLenCodesCount + 257,
 		    CTX.distCodesCount + 1);
 
@@ -613,15 +509,6 @@ start:
 				buffer[bytesWritten++] = CTX.value;
 				length--;
 
-				if (_slidingWindow == NULL) {
-					_slidingWindow = [self
-					    allocMemoryWithSize:
-					    _slidingWindowMask + 1];
-					/* Avoid leaking data */
-					memset(_slidingWindow, 0,
-					    _slidingWindowMask + 1);
-				}
-
 				_slidingWindow[_slidingWindowIndex] = CTX.value;
 				_slidingWindowIndex =
 				    (_slidingWindowIndex + 1) &
@@ -644,8 +531,8 @@ start:
 
 			/* Distance of length distance pair */
 			if (CTX.state == AWAIT_DISTANCE) {
-				if OF_UNLIKELY (!walkTree(self, &CTX.treeIter,
-				    &value))
+				if OF_UNLIKELY (!of_huffman_tree_walk(self,
+				    tryReadBits, &CTX.treeIter, &value))
 					return bytesWritten;
 
 				if OF_UNLIKELY (value >= numDistanceCodes)
@@ -680,13 +567,7 @@ start:
 
 			/* Length distance pair */
 			if (CTX.state == PROCESS_PAIR) {
-				uint16_t j;
-
-				if OF_UNLIKELY (_slidingWindow == NULL)
-					@throw [OFInvalidFormatException
-					    exception];
-
-				for (j = 0; j < CTX.length; j++) {
+				for (uint_fast16_t j = 0; j < CTX.length; j++) {
 					uint16_t idx;
 
 					if OF_UNLIKELY (length == 0) {
@@ -712,22 +593,23 @@ start:
 				CTX.treeIter = CTX.litLenTree;
 			}
 
-			if OF_UNLIKELY (!walkTree(self, &CTX.treeIter, &value))
+			if OF_UNLIKELY (!of_huffman_tree_walk(self, tryReadBits,
+			    &CTX.treeIter, &value))
 				return bytesWritten;
 
 			/* End of block */
 			if OF_UNLIKELY (value == 256) {
 				if (CTX.litLenTree != fixedLitLenTree)
-					releaseTree(CTX.litLenTree);
+					of_huffman_tree_release(CTX.litLenTree);
 				if (CTX.distTree != fixedDistTree)
-					releaseTree(CTX.distTree);
+					of_huffman_tree_release(CTX.distTree);
 
 				_state = BLOCK_HEADER;
 				goto start;
 			}
 
 			/* Literal byte */
-			if (value < 256) {
+			if OF_LIKELY (value < 256) {
 				if OF_UNLIKELY (length == 0) {
 					CTX.state = WRITE_VALUE;
 					CTX.value = value;
@@ -736,15 +618,6 @@ start:
 
 				buffer[bytesWritten++] = value;
 				length--;
-
-				if (_slidingWindow == NULL) {
-					_slidingWindow = [self
-					    allocMemoryWithSize:
-					    _slidingWindowMask + 1];
-					/* Avoid leaking data */
-					memset(_slidingWindow, 0,
-					    _slidingWindowMask + 1);
-				}
 
 				_slidingWindow[_slidingWindowIndex] = value;
 				_slidingWindowIndex =
@@ -785,7 +658,6 @@ start:
 	OF_UNREACHABLE
 }
 
-#ifndef INFLATE64
 - (bool)lowlevelIsAtEndOfStream
 {
 	if (_stream == nil)
@@ -801,12 +673,17 @@ start:
 
 - (bool)hasDataInReadBuffer
 {
-	return ([super hasDataInReadBuffer] || [_stream hasDataInReadBuffer]);
+	return ([super hasDataInReadBuffer] || [_stream hasDataInReadBuffer] ||
+	    _bufferLength - _bufferIndex > 0);
 }
-#endif
 
 - (void)close
 {
+	/* Give back our buffer to the stream, in case it's shared */
+	[_stream unreadFromBuffer: _buffer + _bufferIndex
+			   length: _bufferLength - _bufferIndex];
+	_bufferIndex = _bufferLength = 0;
+
 	[_stream release];
 	_stream = nil;
 
