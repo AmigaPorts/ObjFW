@@ -77,7 +77,6 @@ SRCS = OFApplication.m			\
        OFSHA512Hash.m			\
        OFSortedList.m			\
        OFStdIOStream.m			\
-       ${OFSTDIOSTREAM_WIN32CONSOLE_M}	\
        OFStream.m			\
        OFString.m			\
        OFString+CryptoHashing.m		\
@@ -120,7 +119,8 @@ SRCS = OFApplication.m			\
        ${USE_SRCS_FILES}		\
        ${USE_SRCS_PLUGINS}		\
        ${USE_SRCS_SOCKETS}		\
-       ${USE_SRCS_THREADS}
+       ${USE_SRCS_THREADS}		\
+       ${USE_SRCS_WINDOWS}
 SRCS_FILES = OFFile.m			\
 	     OFFileManager.m		\
 	     OFINICategory.m		\
@@ -128,7 +128,8 @@ SRCS_FILES = OFFile.m			\
 	     OFSettings.m		\
 	     OFString+PathAdditions.m
 SRCS_PLUGINS = OFPlugin.m
-SRCS_SOCKETS = OFHTTPServer.m			\
+SRCS_SOCKETS = OFDNSResolver.m			\
+	       OFHTTPServer.m			\
 	       OFStreamSocket.m			\
 	       OFTCPSocket.m			\
 	       OFUDPSocket.m			\
@@ -139,6 +140,8 @@ SRCS_THREADS = OFCondition.m		\
 	       OFRecursiveMutex.m	\
 	       OFThreadPool.m		\
 	       threading.m
+SRCS_WINDOWS = OFStdIOStream_Win32Console.m	\
+	       OFWindowsRegistryKey.m
 
 INCLUDES_ATOMIC = atomic.h			\
 		  atomic_builtins.h		\

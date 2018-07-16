@@ -93,6 +93,7 @@ case "$host" in
 
 		AC_SUBST(ALLOW_MULTIPLE_DEFINITION,
 			[-Wl,--allow-multiple-definition])
+		AC_SUBST(USE_SRCS_WINDOWS, '${SRCS_WINDOWS}')
 		;;
 	*-psp-*)
 		AS_IF([test x"$DEVKITPSP" = x""], [
@@ -819,12 +820,6 @@ AC_CHECK_FUNC(asprintf, [
 test x"$have_asprintf" != x"yes" -a x"$ac_cv_snprintf_useful_ret" != x"yes" && \
 	AC_MSG_ERROR(No asprintf and no snprintf returning required space!)
 
-case "$host_os" in
-mingw*)
-	AC_SUBST(OFSTDIOSTREAM_WIN32CONSOLE_M, "OFStdIOStream_Win32Console.m")
-	;;
-esac
-
 AC_ARG_ENABLE(unicode-tables,
 	AS_HELP_STRING([--disable-unicode-tables], [Disable Unicode tables]))
 AS_IF([test x"$enable_unicode_tables" != x"no"], [
@@ -1187,6 +1182,7 @@ AS_IF([test x"$enable_sockets" != x"no"], [
 	AC_CHECK_LIB(socket, socket, LIBS="$LIBS -lsocket")
 	AC_CHECK_LIB(network, socket, LIBS="$LIBS -lnetwork")
 	AC_CHECK_LIB(ws2_32, main, LIBS="$LIBS -lws2_32")
+	AC_CHECK_LIB(iphlpapi, main, LIBS="$LIBS -liphlpapi")
 
 	AC_CHECK_HEADER(sys/socket.h, [
 		AC_DEFINE(OF_HAVE_SYS_SOCKET_H, 1,
