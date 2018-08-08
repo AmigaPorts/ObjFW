@@ -158,6 +158,7 @@ AS_IF([test x"$with_nds" = x"yes"], [
 	OBJCFLAGS="$OBJCFLAGS -march=armv5te -mtune=arm946e-s"
 	OBJCFLAGS="$OBJCFLAGS -mthumb -mthumb-interwork"
 	CPPFLAGS="$CPPFLAGS -DARM9 -I$DEVKITPRO/libnds/include"
+	ASFLAGS="$ASFLAGS -march=armv5te"
 	LDFLAGS="$LDFLAGS -specs=ds_arm9.specs"
 	LIBS="$LIBS -L$DEVKITPRO/libnds/lib -lfilesystem -lfat -lnds9"
 	enable_shared="no"
@@ -180,6 +181,7 @@ AS_IF([test x"$with_3ds" = x"yes"], [
 	OBJCFLAGS="$OBJCFLAGS -march=armv6k -mtune=mpcore -mfloat-abi=hard"
 	OBJCFLAGS="$OBJCFLAGS -mtp=soft -mword-relocations"
 	CPPFLAGS="$CPPFLAGS -DARM11 -I$DEVKITPRO/libctru/include"
+	ASFLAGS="$ASFLAGS -march=armv6k"
 	LDFLAGS="$LDFLAGS -specs=3dsx.specs -march=armv6k -mtune=mpcore"
 	LDFLAGS="$LDFLAGS -mfloat-abi=hard -mtp=soft -mword-relocations"
 	LIBS="$LIBS -L$DEVKITPRO/libctru/lib -lctru"
@@ -865,7 +867,13 @@ AS_IF([test x"$ENCODINGS_SRCS" != x""], [
 	])
 ])
 
-AC_CHECK_FUNCS(arc4random random, break)
+AC_CHECK_FUNC(arc4random, [
+	AC_DEFINE(OF_HAVE_ARC4RANDOM, 1, [Whether we have arc4random()])
+], [
+	AC_CHECK_FUNC(random, [
+		AC_DEFINE(OF_HAVE_RANDOM, 1, [Whether we have random()])
+	])
+])
 
 AS_IF([test x"$host_os" != x"morphos"], [
 	AC_CHECK_LIB(dl, dlopen, LIBS="$LIBS -ldl")
@@ -1383,6 +1391,7 @@ AS_IF([test x"$enable_sockets" != x"no" -a x"$enable_threads" != x"no"], [
 	AC_SUBST(OFHTTPCLIENTTESTS_M, "OFHTTPClientTests.m")
 	AC_SUBST(OFURLHANDLER_HTTP_M, "OFURLHandler_HTTP.m")
 
+	AC_SUBST(OFDNS, "ofdns")
 	AS_IF([test x"$enable_files" != x"no"], [
 		AC_SUBST(OFHTTP, "ofhttp")
 	])

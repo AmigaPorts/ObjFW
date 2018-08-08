@@ -408,6 +408,7 @@ main(int argc, char *argv[])
 	[self INIFileTests];
 #endif
 #ifdef OF_HAVE_SOCKETS
+	[self socketTests];
 	[self TCPSocketTests];
 	[self UDPSocketTests];
 	[self kernelEventObserverTests];
@@ -434,7 +435,7 @@ main(int argc, char *argv[])
 #endif
 
 	[self systemInfoTests];
-	[self localizationTests];
+	[self localeTests];
 
 #if defined(OF_IOS)
 	[self outputString: [OFString stringWithFormat: @"%d tests failed!",

@@ -23,12 +23,19 @@
 
 #include <errno.h>
 
+#import "OFArray.h"
+#import "OFCharacterSet.h"
+#import "OFLocale.h"
+#import "OFString.h"
+
 #import "OFException.h"  /* For some E* -> WSAE* defines */
 #import "OFInvalidArgumentException.h"
+#import "OFInvalidFormatException.h"
 #import "OFLockFailedException.h"
 #import "OFUnlockFailedException.h"
 
 #import "socket.h"
+#import "socket_helpers.h"
 #ifdef OF_HAVE_THREADS
 # include "threading.h"
 #endif
@@ -218,3 +225,381 @@ of_getsockname(of_socket_t sock, struct sockaddr *restrict addr,
 	return ret;
 }
 #endif
+
+of_socket_address_t
+of_socket_address_parse_ipv4(OFString *IPv4, uint16_t port)
+{
+	/* TODO: Support IPs that are not in the a.b.c.d format? */
+
+	void *pool = objc_autoreleasePoolPush();
+	OFCharacterSet *whitespaceCharacterSet =
+	    [OFCharacterSet whitespaceCharacterSet];
+	of_socket_address_t ret;
+	struct sockaddr_in *addrIn = (struct sockaddr_in *)&ret.address;
+	OFArray OF_GENERIC(OFString *) *components;
+	uint32_t addr;
+
+	memset(&ret, '\0', sizeof(ret));
+	ret.length = sizeof(struct sockaddr_in);
+
+	addrIn->sin_family = AF_INET;
+	addrIn->sin_port = OF_BSWAP16_IF_LE(port);
+
+	components = [IPv4 componentsSeparatedByString: @"."];
+
+	if ([components count] != 4)
+		@throw [OFInvalidFormatException exception];
+
+	addr = 0;
+
+	for (OFString *component in components) {
+		intmax_t number;
+
+		if ([component length] == 0)
+			@throw [OFInvalidFormatException exception];
+
+		if ([component indexOfCharacterFromSet:
+		    whitespaceCharacterSet] != OF_NOT_FOUND)
+			@throw [OFInvalidFormatException exception];
+
+		number = [component decimalValue];
+
+		if (number < 0 || number > UINT8_MAX)
+			@throw [OFInvalidFormatException exception];
+
+		addr = (addr << 8) | (number & 0xFF);
+	}
+
+	addrIn->sin_addr.s_addr = OF_BSWAP32_IF_LE(addr);
+
+	objc_autoreleasePoolPop(pool);
+
+	return ret;
+}
+
+#ifdef OF_HAVE_IPV6
+static uint16_t
+parseIPv6Component(OFString *component)
+{
+	uintmax_t number;
+
+	if ([component indexOfCharacterFromSet:
+	    [OFCharacterSet whitespaceCharacterSet]] != OF_NOT_FOUND)
+		@throw [OFInvalidFormatException exception];
+
+	number = [component hexadecimalValue];
+
+	if (number > UINT16_MAX)
+		@throw [OFInvalidFormatException exception];
+
+	return (uint16_t)number;
+}
+
+of_socket_address_t
+of_socket_address_parse_ipv6(OFString *IPv6, uint16_t port)
+{
+	void *pool = objc_autoreleasePoolPush();
+	of_socket_address_t ret;
+	struct sockaddr_in6 *addrIn6 = (struct sockaddr_in6 *)&ret.address;
+	size_t doubleColon;
+
+	memset(&ret, '\0', sizeof(ret));
+	ret.length = sizeof(struct sockaddr_in6);
+
+	addrIn6->sin6_family = AF_INET6;
+	addrIn6->sin6_port = OF_BSWAP16_IF_LE(port);
+
+	doubleColon = [IPv6 rangeOfString: @"::"].location;
+
+	if (doubleColon != OF_NOT_FOUND) {
+		OFString *left = [IPv6 substringWithRange:
+		    of_range(0, doubleColon)];
+		OFString *right = [IPv6 substringWithRange:
+		    of_range(doubleColon + 2, [IPv6 length] - doubleColon - 2)];
+		OFArray OF_GENERIC(OFString *) *leftComponents;
+		OFArray OF_GENERIC(OFString *) *rightComponents;
+		size_t i;
+
+		if ([right hasPrefix: @":"] || [right containsString: @"::"])
+			@throw [OFInvalidFormatException exception];
+
+		leftComponents = [left componentsSeparatedByString: @":"];
+		rightComponents = [right componentsSeparatedByString: @":"];
+
+		if ([leftComponents count] + [rightComponents count] > 7)
+			@throw [OFInvalidFormatException exception];
+
+		i = 0;
+		for (OFString *component in leftComponents) {
+			uint16_t number = parseIPv6Component(component);
+
+			addrIn6->sin6_addr.s6_addr[i++] = number >> 8;
+			addrIn6->sin6_addr.s6_addr[i++] = number;
+		}
+
+		i = 16;
+		for (OFString *component in [rightComponents reversedArray]) {
+			uint16_t number = parseIPv6Component(component);
+
+			addrIn6->sin6_addr.s6_addr[--i] = number >> 8;
+			addrIn6->sin6_addr.s6_addr[--i] = number;
+		}
+	} else {
+		OFArray OF_GENERIC(OFString *) *components =
+		    [IPv6 componentsSeparatedByString: @":"];
+		size_t i;
+
+		if ([components count] != 8)
+			@throw [OFInvalidFormatException exception];
+
+		i = 0;
+		for (OFString *component in components) {
+			uint16_t number;
+
+			if ([component length] == 0)
+				@throw [OFInvalidFormatException exception];
+
+			number = parseIPv6Component(component);
+
+			addrIn6->sin6_addr.s6_addr[i++] = number >> 8;
+			addrIn6->sin6_addr.s6_addr[i++] = number;
+		}
+	}
+
+	objc_autoreleasePoolPop(pool);
+
+	return ret;
+}
+#endif
+
+of_socket_address_t
+of_socket_address_parse_ip(OFString *IP, uint16_t port)
+{
+#ifdef OF_HAVE_IPV6
+	@try {
+		return of_socket_address_parse_ipv6(IP, port);
+	} @catch (OFInvalidFormatException *e) {
+#endif
+		return of_socket_address_parse_ipv4(IP, port);
+#ifdef OF_HAVE_IPV6
+	}
+#endif
+}
+
+bool
+of_socket_address_equal(of_socket_address_t *address1,
+    of_socket_address_t *address2)
+{
+	struct sockaddr_in *addrIn1, *addrIn2;
+#ifdef OF_HAVE_IPV6
+	struct sockaddr_in6 *addrIn6_1, *addrIn6_2;
+#endif
+
+	if (address1->address.ss_family != address2->address.ss_family)
+		return false;
+
+	switch (address1->address.ss_family) {
+	case AF_INET:
+#if !defined(OF_WII) && !defined(OF_NINTENDO_3DS)
+		if (address1->length < (socklen_t)sizeof(struct sockaddr_in) ||
+		    address2->length < (socklen_t)sizeof(struct sockaddr_in))
+			@throw [OFInvalidArgumentException exception];
+#else
+		if (address1->length < 8 || address2->length < 8)
+			@throw [OFInvalidArgumentException exception];
+#endif
+
+		addrIn1 = (struct sockaddr_in *)&address1->address;
+		addrIn2 = (struct sockaddr_in *)&address2->address;
+
+		if (addrIn1->sin_port != addrIn2->sin_port)
+			return false;
+		if (addrIn1->sin_addr.s_addr != addrIn2->sin_addr.s_addr)
+			return false;
+
+		break;
+#ifdef OF_HAVE_IPV6
+	case AF_INET6:
+		if (address1->length < (socklen_t)sizeof(struct sockaddr_in6) ||
+		    address2->length < (socklen_t)sizeof(struct sockaddr_in6))
+			@throw [OFInvalidArgumentException exception];
+
+		addrIn6_1 = (struct sockaddr_in6 *)&address1->address;
+		addrIn6_2 = (struct sockaddr_in6 *)&address2->address;
+
+		if (addrIn6_1->sin6_port != addrIn6_2->sin6_port)
+			return false;
+		if (memcmp(addrIn6_1->sin6_addr.s6_addr,
+		    addrIn6_2->sin6_addr.s6_addr,
+		    sizeof(addrIn6_1->sin6_addr.s6_addr)) != 0)
+			return false;
+
+		break;
+#endif
+	default:
+		@throw [OFInvalidArgumentException exception];
+	}
+
+	return true;
+}
+
+uint32_t
+of_socket_address_hash(of_socket_address_t *address)
+{
+	uint32_t hash = of_hash_seed;
+	struct sockaddr_in *addrIn;
+#ifdef OF_HAVE_IPV6
+	struct sockaddr_in6 *addrIn6;
+	uint32_t subhash;
+#endif
+
+	hash += address->address.ss_family;
+
+	switch (address->address.ss_family) {
+	case AF_INET:
+#if !defined(OF_WII) && !defined(OF_NINTENDO_3DS)
+		if (address->length < (socklen_t)sizeof(struct sockaddr_in))
+			@throw [OFInvalidArgumentException exception];
+#else
+		if (address->length < 8)
+			@throw [OFInvalidArgumentException exception];
+#endif
+
+		addrIn = (struct sockaddr_in *)&address->address;
+
+		hash += (addrIn->sin_port << 1);
+		hash ^= addrIn->sin_addr.s_addr;
+
+		break;
+#ifdef OF_HAVE_IPV6
+	case AF_INET6:
+		if (address->length < (socklen_t)sizeof(struct sockaddr_in6))
+			@throw [OFInvalidArgumentException exception];
+
+		addrIn6 = (struct sockaddr_in6 *)&address->address;
+
+		hash += (addrIn6->sin6_port << 1);
+
+		OF_HASH_INIT(subhash);
+
+		for (size_t i = 0; i < sizeof(addrIn6->sin6_addr.s6_addr); i++)
+			OF_HASH_ADD(subhash, addrIn6->sin6_addr.s6_addr[i]);
+
+		OF_HASH_FINALIZE(subhash);
+
+		hash ^= subhash;
+
+		break;
+#endif
+	default:
+		@throw [OFInvalidArgumentException exception];
+	}
+
+	return hash;
+}
+
+static OFString *
+IPv4String(const of_socket_address_t *address, uint16_t *port)
+{
+	const struct sockaddr_in *addrIn =
+	    (const struct sockaddr_in *)&address->address;
+	uint32_t addr = OF_BSWAP32_IF_LE(addrIn->sin_addr.s_addr);
+	OFString *string;
+
+	string = [OFString stringWithFormat: @"%u.%u.%u.%u",
+	    (addr & 0xFF000000) >> 24, (addr & 0x00FF0000) >> 16,
+	    (addr & 0x0000FF00) >>  8, addr & 0x000000FF];
+
+	if (port != NULL)
+		*port = OF_BSWAP16_IF_LE(addrIn->sin_port);
+
+	return string;
+}
+
+#ifdef OF_HAVE_IPV6
+static OFString *
+IPv6String(const of_socket_address_t *address, uint16_t *port)
+{
+	OFMutableString *string = [OFMutableString string];
+	const struct sockaddr_in6 *addrIn6 =
+	    (const struct sockaddr_in6 *)&address->address;
+	int_fast8_t zerosStart = -1, maxZerosStart = -1;
+	uint_fast8_t zerosCount = 0, maxZerosCount = 0;
+	bool first = true;
+
+	for (uint_fast8_t i = 0; i < 16; i += 2) {
+		if (addrIn6->sin6_addr.s6_addr[i] == 0 &&
+		    addrIn6->sin6_addr.s6_addr[i + 1] == 0) {
+			if (zerosStart >= 0)
+				zerosCount++;
+			else {
+				zerosStart = i;
+				zerosCount = 1;
+			}
+		} else {
+			if (zerosCount > maxZerosCount) {
+				maxZerosStart = zerosStart;
+				maxZerosCount = zerosCount;
+			}
+
+			zerosStart = -1;
+		}
+	}
+	if (zerosCount > maxZerosCount) {
+		maxZerosStart = zerosStart;
+		maxZerosCount = zerosCount;
+	}
+
+	if (maxZerosCount >= 2) {
+		for (uint_fast8_t i = 0; i < maxZerosStart; i += 2) {
+			[string appendFormat:
+			    (first ? @"%x" : @":%x"),
+			    (addrIn6->sin6_addr.s6_addr[i] << 8) |
+			    addrIn6->sin6_addr.s6_addr[i + 1]];
+			first = false;
+		}
+
+		[string appendString: @"::"];
+		first = true;
+
+		for (uint_fast8_t i = maxZerosStart + (maxZerosCount * 2);
+		    i < 16; i += 2) {
+			[string appendFormat:
+			    (first ? @"%x" : @":%x"),
+			    (addrIn6->sin6_addr.s6_addr[i] << 8) |
+			    addrIn6->sin6_addr.s6_addr[i + 1]];
+			first = false;
+		}
+	} else {
+		for (uint_fast8_t i = 0; i < 16; i += 2) {
+			[string appendFormat:
+			    (first ? @"%x" : @":%x"),
+			    (addrIn6->sin6_addr.s6_addr[i] << 8) |
+			    addrIn6->sin6_addr.s6_addr[i + 1]];
+			first = false;
+		}
+	}
+
+	[string makeImmutable];
+
+	if (port != NULL)
+		*port = OF_BSWAP16_IF_LE(addrIn6->sin6_port);
+
+	return string;
+}
+#endif
+
+OFString *
+of_socket_address_ip_string(const of_socket_address_t *address, uint16_t *port)
+{
+	switch (address->address.ss_family) {
+	case AF_INET:
+		return IPv4String(address, port);
+#ifdef OF_HAVE_IPV6
+	case AF_INET6:
+		return IPv6String(address, port);
+#endif
+	default:
+		@throw [OFInvalidArgumentException exception];
+	}
+}

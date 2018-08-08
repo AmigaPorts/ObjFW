@@ -23,15 +23,13 @@
 
 #include <assert.h>
 
-#include <sys/time.h>
-
 #ifdef OF_APPLE_RUNTIME
 # include <dlfcn.h>
 #endif
 
 #import "OFObject.h"
 #import "OFArray.h"
-#import "OFLocalization.h"
+#import "OFLocale.h"
 #import "OFMethodSignature.h"
 #import "OFRunLoop.h"
 #import "OFThread.h"
@@ -121,7 +119,7 @@ uncaughtExceptionHandler(id exception)
 {
 	OFString *description = [exception description];
 	OFArray *backtrace = nil;
-	of_string_encoding_t encoding = [OFLocalization encoding];
+	of_string_encoding_t encoding = [OFLocale encoding];
 
 	fprintf(stderr, "\nRuntime error: Unhandled exception:\n%s\n",
 	    [description cStringWithEncoding: encoding]);
@@ -214,8 +212,7 @@ of_alloc_object(Class class, size_t extraSize, size_t extraAlignment,
 const char *
 _NSPrintForDebugger(id object)
 {
-	return [[object description]
-	    cStringWithEncoding: [OFLocalization encoding]];
+	return [[object description] cStringWithEncoding: [OFLocale encoding]];
 }
 
 /* References for static linking */
@@ -252,23 +249,9 @@ _references_to_categories_of_OFObject(void)
 
 	objc_setEnumerationMutationHandler(enumerationMutationHandler);
 
-	of_hash_seed = 0;
-	while (of_hash_seed == 0) {
-#if defined(HAVE_ARC4RANDOM)
-		of_hash_seed = arc4random();
-#elif defined(HAVE_RANDOM)
-		struct timeval t;
-		gettimeofday(&t, NULL);
-		srandom((unsigned)(t.tv_sec ^ t.tv_usec));
-		of_hash_seed = (uint32_t)((random() << 16) |
-		    (random() & 0xFFFF));
-#else
-		struct timeval t;
-		gettimeofday(&t, NULL);
-		srand((unsigned)(t.tv_sec ^ t.tv_usec));
-		of_hash_seed = (uint32_t)((rand() << 16) | (rand() & 0xFFFF));
-#endif
-	}
+	do {
+		of_hash_seed = of_random();
+	} while (of_hash_seed == 0);
 }
 
 + (void)unload

@@ -118,7 +118,7 @@
 
 #import "OFApplication.h"
 #import "OFSystemInfo.h"
-#import "OFLocalization.h"
+#import "OFLocale.h"
 #import "OFOptionsParser.h"
 #import "OFTimer.h"
 #import "OFRunLoop.h"
@@ -132,9 +132,9 @@
 #import "OFException.h"
 #ifdef OF_HAVE_SOCKETS
 # import "OFAcceptFailedException.h"
-# import "OFAddressTranslationFailedException.h"
 # import "OFAlreadyConnectedException.h"
 # import "OFBindFailedException.h"
+# import "OFResolveHostFailedException.h"
 #endif
 #import "OFChangeCurrentDirectoryPathFailedException.h"
 #import "OFChecksumMismatchException.h"

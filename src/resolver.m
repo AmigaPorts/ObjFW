@@ -32,7 +32,6 @@
 # include "threading.h"
 #endif
 
-#import "OFAddressTranslationFailedException.h"
 #import "OFInitializationFailedException.h"
 #import "OFInvalidArgumentException.h"
 #import "OFOutOfMemoryException.h"
@@ -41,6 +40,7 @@
 # import "OFLockFailedException.h"
 # import "OFUnlockFailedException.h"
 #endif
+#import "OFResolveHostFailedException.h"
 
 #import "socket_helpers.h"
 
@@ -75,13 +75,13 @@ of_resolve_host(OFString *host, uint16_t port, int type)
 
 	@try {
 # endif
-		int error;
-
-		if ((error = getaddrinfo([host UTF8String], portCString, &hints,
-		    &res0)) != 0)
-			@throw [OFAddressTranslationFailedException
+		if (getaddrinfo([host UTF8String], portCString, &hints,
+		    &res0) != 0)
+			@throw [OFResolveHostFailedException
 			    exceptionWithHost: host
-					error: error];
+				  recordClass: OF_DNS_RESOURCE_RECORD_CLASS_IN
+				   recordType: 0
+					error: OF_DNS_RESOLVER_ERROR_UNKNOWN];
 
 		count = 0;
 		for (res = res0; res != NULL; res = res->ai_next)
@@ -89,8 +89,11 @@ of_resolve_host(OFString *host, uint16_t port, int type)
 
 		if (count == 0) {
 			freeaddrinfo(res0);
-			@throw [OFAddressTranslationFailedException
-			    exceptionWithHost: host];
+			@throw [OFResolveHostFailedException
+			    exceptionWithHost: host
+				  recordClass: OF_DNS_RESOURCE_RECORD_CLASS_IN
+				   recordType: 0
+					error: OF_DNS_RESOLVER_ERROR_NO_RESULT];
 		}
 
 		if ((ret = calloc(count + 1, sizeof(*ret))) == NULL) {
@@ -192,17 +195,22 @@ of_resolve_host(OFString *host, uint16_t port, int type)
 
 		if ((he = gethostbyname((const void *)[host UTF8String])) ==
 		    NULL || he->h_addrtype != AF_INET)
-			@throw [OFAddressTranslationFailedException
+			@throw [OFResolveHostFailedException
 			    exceptionWithHost: host
-					error: h_errno];
+				  recordClass: OF_DNS_RESOURCE_RECORD_CLASS_IN
+				   recordType: 0
+					error: OF_DNS_RESOLVER_ERROR_UNKNOWN];
 
 		count = 0;
 		for (ip = (char **)he->h_addr_list; *ip != NULL; ip++)
 			count++;
 
 		if (count == 0)
-			@throw [OFAddressTranslationFailedException
-			    exceptionWithHost: host];
+			@throw [OFResolveHostFailedException
+			    exceptionWithHost: host
+				  recordClass: OF_DNS_RESOURCE_RECORD_CLASS_IN
+				   recordType: 0
+					error: OF_DNS_RESOLVER_ERROR_NO_RESULT];
 
 		if ((ret = calloc(count + 1, sizeof(*ret))) == NULL)
 			@throw [OFOutOfMemoryException
@@ -252,84 +260,6 @@ of_resolve_host(OFString *host, uint16_t port, int type)
 #endif
 
 	return ret;
-}
-
-void
-of_address_to_string_and_port(struct sockaddr *address, socklen_t addressLength,
-    OFString *__autoreleasing *host, uint16_t *port)
-{
-#ifdef HAVE_GETADDRINFO
-	char hostCString[NI_MAXHOST];
-	char portCString[NI_MAXSERV];
-
-# if !defined(HAVE_THREADSAFE_GETADDRINFO) && defined(OF_HAVE_THREADS)
-	if (!of_mutex_lock(&mutex))
-		@throw [OFLockFailedException exception];
-
-	@try {
-# endif
-		int error;
-
-		/* FIXME: Add NI_DGRAM for UDP? */
-		if ((error = getnameinfo(address, addressLength, hostCString,
-		    NI_MAXHOST, portCString, NI_MAXSERV,
-		    NI_NUMERICHOST | NI_NUMERICSERV)) != 0)
-			@throw [OFAddressTranslationFailedException
-			    exceptionWithError: error];
-
-		if (host != NULL)
-			*host = [OFString stringWithUTF8String: hostCString];
-
-		if (port != NULL) {
-			char *endptr;
-			long tmp;
-
-			if ((tmp = strtol(portCString, &endptr, 10)) >
-			    UINT16_MAX)
-				@throw [OFOutOfRangeException exception];
-
-			if (endptr != NULL && *endptr != '\0')
-				@throw [OFAddressTranslationFailedException
-				    exception];
-
-			*port = (uint16_t)tmp;
-		}
-# if !defined(HAVE_THREADSAFE_GETADDRINFO) && defined(OF_HAVE_THREADS)
-	} @finally {
-		if (!of_mutex_unlock(&mutex))
-			@throw [OFUnlockFailedException exception];
-	}
-# endif
-#else
-	char *hostCString;
-
-	if (address->sa_family != AF_INET)
-		@throw [OFInvalidArgumentException exception];
-
-# if OF_HAVE_THREADS
-	if (!of_mutex_lock(&mutex))
-		@throw [OFLockFailedException exception];
-
-	@try {
-# endif
-		if ((hostCString = inet_ntoa(
-		    ((struct sockaddr_in *)(void *)address)->sin_addr)) == NULL)
-			@throw [OFAddressTranslationFailedException
-			    exceptionWithError: h_errno];
-
-		if (host != NULL)
-			*host = [OFString stringWithUTF8String: hostCString];
-
-		if (port != NULL)
-			*port = OF_BSWAP16_IF_LE(
-			    ((struct sockaddr_in *)(void *)address)->sin_port);
-# if OF_HAVE_THREADS
-	} @finally {
-		if (!of_mutex_unlock(&mutex))
-			@throw [OFUnlockFailedException exception];
-	}
-# endif
-#endif
 }
 
 void

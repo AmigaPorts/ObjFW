@@ -17,11 +17,46 @@
 
 #import "OFObject.h"
 #import "OFString.h"
+#import "OFDNSResourceRecord.h"
 
 OF_ASSUME_NONNULL_BEGIN
 
 @class OFArray OF_GENERIC(ObjectType);
 @class OFDictionary OF_GENERIC(KeyType, ObjectType);
+@class OFMutableDictionary OF_GENERIC(KeyType, ObjectType);
+@class OFNumber;
+@class OFUDPSocket;
+
+/*!
+ * @enum of_dns_resolver_error_t OFDNSResolver.h ObjFW/OFDNSResolver.h
+ *
+ * @brief An enum describing why resolving a host failed.
+ */
+typedef enum of_dns_resolver_error_t {
+	/*! An unknown error */
+	OF_DNS_RESOLVER_ERROR_UNKNOWN,
+	/*! The query timed out */
+	OF_DNS_RESOLVER_ERROR_TIMEOUT,
+	/*! The query was canceled */
+	OF_DNS_RESOLVER_ERROR_CANCELED,
+	/*!
+	 * No result for the specified host with the specified type and class.
+	 *
+	 * This is only used in situations where this is an error, e.g. when
+	 * trying to connect to a host.
+	 */
+	OF_DNS_RESOLVER_ERROR_NO_RESULT,
+	/*! The server considered the query to be malformed */
+	OF_DNS_RESOLVER_ERROR_SERVER_INVALID_FORMAT,
+	/*! The server was unable to process due to an internal error */
+	OF_DNS_RESOLVER_ERROR_SERVER_FAILURE,
+	/*! The server returned an error that the domain does not exist */
+	OF_DNS_RESOLVER_ERROR_SERVER_NAME_ERROR,
+	/*! The server does not have support for the requested query */
+	OF_DNS_RESOLVER_ERROR_SERVER_NOT_IMPLEMENTED,
+	/*! The server refused the query */
+	OF_DNS_RESOLVER_ERROR_SERVER_REFUSED
+} of_dns_resolver_error_t;
 
 /*!
  * @class OFDNSResolver OFDNSResolver.h ObjFW/OFDNSResolver.h
@@ -37,6 +72,11 @@ OF_ASSUME_NONNULL_BEGIN
 	OFArray OF_GENERIC(OFString *) *_searchDomains;
 	size_t _minNumberOfDotsInAbsoluteName;
 	bool _usesTCP;
+	OFUDPSocket *_IPv4Socket;
+#ifdef OF_HAVE_IPV6
+	OFUDPSocket *_IPv6Socket;
+#endif
+	OFMutableDictionary OF_GENERIC(OFNumber *, id) *_queries;
 }
 
 /*!
@@ -83,6 +123,45 @@ OF_ASSUME_NONNULL_BEGIN
  * @brief Initializes an already allocated OFDNSResolver.
  */
 - (instancetype)init;
+
+/*!
+ * @brief Asynchronously resolves the specified host.
+ *
+ * @param host The host to resolve
+ * @param target The target to call with the result once resolving is done
+ * @param selector The selector to call on the target. The signature must be
+ *		   `void (OFArray<OFDNSResourceRecord *> *response, id context,
+ *		   id exception)`.
+ * @param context A context object to pass along to the target
+ */
+- (void)asyncResolveHost: (OFString *)host
+		  target: (id)target
+		selector: (SEL)selector
+		 context: (nullable id)context;
+
+/*!
+ * @brief Asynchronously resolves the specified host.
+ *
+ * @param host The host to resolve
+ * @param recordClass The desired class of the records to query
+ * @param recordType The desired type of the records to query
+ * @param target The target to call with the result once resolving is done
+ * @param selector The selector to call on the target. The signature must be
+ *		   `void (OFArray<OFDNSResourceRecord *> *response, id context,
+ *		   id exception)`.
+ * @param context A context object to pass along to the target
+ */
+- (void)asyncResolveHost: (OFString *)host
+	     recordClass: (of_dns_resource_record_class_t)recordClass
+	      recordType: (of_dns_resource_record_type_t)recordType
+		  target: (id)target
+		selector: (SEL)selector
+		 context: (nullable id)context;
+
+/*!
+ * @brief Closes all sockets and cancels all ongoing requests.
+ */
+- (void)close;
 @end
 
 OF_ASSUME_NONNULL_END

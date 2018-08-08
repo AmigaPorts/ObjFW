@@ -48,6 +48,7 @@
 #import "OFNotImplementedException.h"
 #import "OFNotOpenException.h"
 #import "OFOutOfMemoryException.h"
+#import "OFOutOfRangeException.h"
 #import "OFSetOptionFailedException.h"
 
 #import "socket.h"
@@ -287,6 +288,8 @@ static uint16_t defaultSOCKS5Port = 1080;
 			continue;
 		}
 
+		_blocking = true;
+
 #if SOCK_CLOEXEC == 0 && defined(HAVE_FCNTL) && defined(FD_CLOEXEC)
 		if ((flags = fcntl(_socket, F_GETFD, 0)) != -1)
 			fcntl(_socket, F_SETFD, flags | FD_CLOEXEC);
@@ -367,7 +370,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 	union {
 		struct sockaddr_storage storage;
 		struct sockaddr_in in;
-# ifdef HAVE_IPV6
+# ifdef OF_HAVE_IPV6
 		struct sockaddr_in6 in6;
 # endif
 	} addr;
@@ -395,6 +398,8 @@ static uint16_t defaultSOCKS5Port = 1080;
 					 port: port
 				       socket: self
 					errNo: of_socket_errno()];
+
+		_blocking = true;
 
 #if SOCK_CLOEXEC == 0 && defined(HAVE_FCNTL) && defined(FD_CLOEXEC)
 		if ((flags = fcntl(_socket, F_GETFD, 0)) != -1)
@@ -435,7 +440,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 					    results[0]->address)->sin_port =
 					    OF_BSWAP16_IF_LE(rnd);
 					break;
-# ifdef HAVE_IPV6
+# ifdef OF_HAVE_IPV6
 				case AF_INET6:
 					((struct sockaddr_in6 *)
 					    results[0]->address)->sin6_port =
@@ -494,7 +499,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 
 	if (addr.storage.ss_family == AF_INET)
 		return OF_BSWAP16_IF_LE(addr.in.sin_port);
-# ifdef HAVE_IPV6
+# ifdef OF_HAVE_IPV6
 	if (addr.storage.ss_family == AF_INET6)
 		return OF_BSWAP16_IF_LE(addr.in6.sin6_port);
 # endif
@@ -601,7 +606,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 
 - (OFString *)remoteAddress
 {
-	OFString *ret;
+	of_socket_address_t address;
 
 	if (_socket == INVALID_SOCKET)
 		@throw [OFNotOpenException exceptionWithObject: self];
@@ -609,9 +614,14 @@ static uint16_t defaultSOCKS5Port = 1080;
 	if (_address == NULL)
 		@throw [OFInvalidArgumentException exception];
 
-	of_address_to_string_and_port(_address, _addressLength, &ret, NULL);
+	if (_addressLength > (socklen_t)sizeof(address.address))
+		@throw [OFOutOfRangeException exception];
 
-	return ret;
+	memset(&address, '\0', sizeof(address));
+	memcpy(&address.address, _address, _addressLength);
+	address.length = _addressLength;
+
+	return of_socket_address_ip_string(&address, NULL);
 }
 
 - (bool)isListening
@@ -627,7 +637,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 	if (setsockopt(_socket, SOL_SOCKET, SO_KEEPALIVE,
 	    (char *)&v, (socklen_t)sizeof(v)) != 0)
 		@throw [OFSetOptionFailedException
-		    exceptionWithStream: self
+		    exceptionWithObject: self
 				  errNo: of_socket_errno()];
 }
 
@@ -654,7 +664,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 	if (setsockopt(_socket, IPPROTO_TCP, TCP_NODELAY,
 	    (char *)&v, (socklen_t)sizeof(v)) != 0)
 		@throw [OFSetOptionFailedException
-		    exceptionWithStream: self
+		    exceptionWithObject: self
 				  errNo: of_socket_errno()];
 }
 

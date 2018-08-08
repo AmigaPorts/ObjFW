@@ -21,7 +21,7 @@ SRCS = ForwardingTests.m		\
        OFInvocationTests.m		\
        OFJSONTests.m			\
        OFListTests.m			\
-       OFLocalizationTests.m		\
+       OFLocaleTests.m			\
        OFMethodSignatureTests.m		\
        OFNumberTests.m			\
        OFObjectTests.m			\
@@ -57,7 +57,8 @@ SRCS_FILES = OFHMACTests.m		\
 SRCS_PLUGINS = OFPluginTests.m
 SRCS_SOCKETS = OFKernelEventObserverTests.m	\
 	       OFTCPSocketTests.m		\
-	       OFUDPSocketTests.m
+	       OFUDPSocketTests.m		\
+	       SocketTests.m
 SRCS_THREADS = OFThreadTests.m
 
 IOS_USER ?= mobile

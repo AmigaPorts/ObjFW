@@ -147,8 +147,8 @@ enum {
 - (void)listTests;
 @end
 
-@interface TestsAppDelegate (OFLocalizationTests)
-- (void)localizationTests;
+@interface TestsAppDelegate (OFLocaleTests)
+- (void)localeTests;
 @end
 
 @interface TestsAppDelegate (OFMD5HashTests)
@@ -266,4 +266,8 @@ enum {
 
 @interface TestsAppDelegate (PBKDF2Tests)
 - (void)PBKDF2Tests;
+@end
+
+@interface TestsAppDelegate (SocketTests)
+- (void)socketTests;
 @end

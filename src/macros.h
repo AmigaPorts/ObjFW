@@ -31,6 +31,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/time.h>
+
 #include "platform.h"
 
 #ifdef OF_OBJFW_RUNTIME
@@ -847,4 +849,24 @@ static OF_INLINE char
 of_ascii_tolower(char c)
 {
 	return (c >= 'A' && c <= 'Z' ? 'a' + (c - 'A') : c);
+}
+
+/* This does *NOT* provide cryptographically secure randomness! */
+static OF_INLINE uint32_t
+of_random(void) {
+#if defined(OF_HAVE_ARC4RANDOM)
+	return arc4random();
+#elif defined(OF_HAVE_RANDOM)
+	struct timeval tv;
+
+	gettimeofday(&tv, NULL);
+	srandom((unsigned)(tv.tv_sec ^ tv.tv_usec));
+	return (((uint32_t)(random()) << 16) | ((uint32_t)(random()) & 0xFFFF));
+#else
+	struct timeval tv;
+
+	gettimeofday(&tv, NULL);
+	srand((unsigned)(tv.tv_sec ^ tv.tv_usec));
+	return (((uint32_t)(rand()) << 16) | ((uint32_t)(rand()) & 0xFFFF));
+#endif
 }
