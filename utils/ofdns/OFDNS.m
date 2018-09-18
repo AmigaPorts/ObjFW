@@ -28,16 +28,25 @@
 OF_APPLICATION_DELEGATE(OFDNS)
 
 @implementation OFDNS
-- (void)handleDNSResponse: (OFArray OF_GENERIC(OFDNSResourceRecord *) *)response
-		  context: (id)context
-		exception: (id)exception
+-    (void)DNSResolver: (OFDNSResolver *)resolver
+  didResolveDomainName: (OFString *)domainName
+	 answerRecords: (OFArray *)answerRecords
+      authorityRecords: (OFArray *)authorityRecords
+     additionalRecords: (OFArray *)additionalRecords
+	       context: (id)context
+	     exception: (id)exception
 {
 	if (exception != nil) {
 		[of_stderr writeFormat: @"Failed to resolve: %@\n", exception];
 		[OFApplication terminateWithStatus: 1];
 	}
 
-	[of_stdout writeLine: [response description]];
+	[of_stdout writeFormat: @"FQDN: %@\n"
+				@"Answer records: %@\n"
+				@"Authority records: %@\n"
+				@"Additional records: %@\n",
+				domainName, answerRecords, authorityRecords,
+				additionalRecords];
 
 	[OFApplication terminate];
 }
@@ -68,16 +77,19 @@ OF_APPLICATION_DELEGATE(OFDNS)
 		recordClass = of_dns_resource_record_class_parse(
 		    [arguments objectAtIndex: 2]);
 
-	if ([arguments count] >= 4)
+	if ([arguments count] >= 4) {
+		[resolver setConfigReloadInterval: 0];
 		[resolver setNameServers:
 		    [OFArray arrayWithObject: [arguments objectAtIndex: 3]]];
+	}
 
 	[resolver asyncResolveHost: [arguments objectAtIndex: 0]
 		       recordClass: recordClass
 			recordType: recordType
 			    target: self
-			  selector: @selector(handleDNSResponse:context:
-					exception:)
+			  selector: @selector(DNSResolver:didResolveDomainName:
+					answerRecords:authorityRecords:
+					additionalRecords:context:exception:)
 			   context: nil];
 }
 @end

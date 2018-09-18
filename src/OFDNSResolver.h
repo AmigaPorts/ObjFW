@@ -22,6 +22,8 @@
 OF_ASSUME_NONNULL_BEGIN
 
 @class OFArray OF_GENERIC(ObjectType);
+@class OFDNSResolverQuery;
+@class OFDate;
 @class OFDictionary OF_GENERIC(KeyType, ObjectType);
 @class OFMutableDictionary OF_GENERIC(KeyType, ObjectType);
 @class OFNumber;
@@ -62,6 +64,11 @@ typedef enum of_dns_resolver_error_t {
  * @class OFDNSResolver OFDNSResolver.h ObjFW/OFDNSResolver.h
  *
  * @brief A class for resolving DNS names.
+ *
+ * @note If you change any of the properties, make sure to set
+ *	 @ref configReloadInterval to 0, as otherwise your changes will be
+ *	 reverted back to the system configuration on the next periodic config
+ *	 reload.
  */
 @interface OFDNSResolver: OFObject
 {
@@ -70,13 +77,17 @@ typedef enum of_dns_resolver_error_t {
 	OFArray OF_GENERIC(OFString *) *_nameServers;
 	OFString *_Nullable _localDomain;
 	OFArray OF_GENERIC(OFString *) *_searchDomains;
-	size_t _minNumberOfDotsInAbsoluteName;
+	of_time_interval_t _timeout;
+	unsigned int _maxAttempts, _minNumberOfDotsInAbsoluteName;
 	bool _usesTCP;
+	of_time_interval_t _configReloadInterval;
+	OFDate *_lastConfigReload;
 	OFUDPSocket *_IPv4Socket;
 #ifdef OF_HAVE_IPV6
 	OFUDPSocket *_IPv6Socket;
 #endif
-	OFMutableDictionary OF_GENERIC(OFNumber *, id) *_queries;
+	OFMutableDictionary OF_GENERIC(OFNumber *, OFDNSResolverQuery *)
+	    *_queries;
 }
 
 /*!
@@ -105,14 +116,34 @@ typedef enum of_dns_resolver_error_t {
 @property (copy, nonatomic) OFArray OF_GENERIC(OFString *) *searchDomains;
 
 /*!
+ * @brief The timeout, in seconds, after which the next name server should be
+ *	  tried.
+ */
+@property (nonatomic) of_time_interval_t timeout;
+
+/*!
+ * @brief The number of attempts before giving up to resolve a host.
+ *
+ * Trying all name servers once is considered a single attempt.
+ */
+@property (nonatomic) unsigned int maxAttempts;
+
+/*!
  * @brief The minimum number of dots for a name to be considered absolute.
  */
-@property (nonatomic) size_t minNumberOfDotsInAbsoluteName;
+@property (nonatomic) unsigned int minNumberOfDotsInAbsoluteName;
 
 /*!
  * @brief Whether the resolver uses TCP to talk to a name server.
  */
 @property (nonatomic) bool usesTCP;
+
+/*!
+ * @brief The interval in seconds in which the config should be reloaded.
+ *
+ * Setting this to 0 disables config reloading.
+ */
+@property (nonatomic) of_time_interval_t configReloadInterval;
 
 /*!
  * @brief Creates a new, autoreleased OFDNSResolver.
@@ -130,8 +161,35 @@ typedef enum of_dns_resolver_error_t {
  * @param host The host to resolve
  * @param target The target to call with the result once resolving is done
  * @param selector The selector to call on the target. The signature must be
- *		   `void (OFArray<OFDNSResourceRecord *> *response, id context,
- *		   id exception)`.
+ *		   the following:
+ *		   @parblock
+ *
+ *		       void (OFDNSResolver *resolver, OFString *domainName,
+ *		           OFArray<OFDictionary<OFString *,
+ *		           __kindof OFDNSResourceRecord *> *>
+ *		           *_Nullable answerRecords,
+ *		           OFArray<OFDictionary<OFString *,
+ *		           __kindof OFDNSResourceRecord *> *>
+ *		           *_Nullable authorityRecords,
+ *		           OFArray<OFDictionary<OFString *,
+ *		           __kindof OFDNSResourceRecord *> *>
+ *		           *_Nullable additionalRecords,
+ *		           id _Nullable context, id _Nullable exception)
+ *
+ *		   `resolver` is the acting resolver.@n
+ *		   `domainName` is the fully qualified domain name used to
+ *		   resolve the host.@n
+ *		   `answerRecords` are the answer records from the name server,
+ *		   grouped by domain name.
+ *		   @n
+ *		   `authorityRecords` are the authority records from the name
+ *		   server, grouped by domain name.@n
+ *		   `additionalRecords` are additional records sent by the name
+ *		   server, grouped by domain name.@n
+ *		   `context` is the context object originally passed.@n
+ *		   `exception` is an exception that happened during resolving,
+ *		   otherwise nil.
+ *		   @endparblock
  * @param context A context object to pass along to the target
  */
 - (void)asyncResolveHost: (OFString *)host
@@ -147,8 +205,35 @@ typedef enum of_dns_resolver_error_t {
  * @param recordType The desired type of the records to query
  * @param target The target to call with the result once resolving is done
  * @param selector The selector to call on the target. The signature must be
- *		   `void (OFArray<OFDNSResourceRecord *> *response, id context,
- *		   id exception)`.
+ *		   the following:
+ *		   @parblock
+ *
+ *		       void (OFDNSResolver *resolver, OFString *domainName,
+ *		           OFArray<OFDictionary<OFString *,
+ *		           __kindof OFDNSResourceRecord *> *>
+ *		           *_Nullable answerRecords,
+ *		           OFArray<OFDictionary<OFString *,
+ *		           __kindof OFDNSResourceRecord *> *>
+ *		           *_Nullable authorityRecords,
+ *		           OFArray<OFDictionary<OFString *,
+ *		           __kindof OFDNSResourceRecord *> *>
+ *		           *_Nullable additionalRecords,
+ *		           id _Nullable context, id _Nullable exception)
+ *
+ *		   `resolver` is the acting resolver.@n
+ *		   `domainName` is the fully qualified domain name used to
+ *		   resolve the host.@n
+ *		   `answerRecords` are the answer records from the name server,
+ *		   grouped by domain name.
+ *		   @n
+ *		   `authorityRecords` are the authority records from the name
+ *		   server, grouped by domain name.@n
+ *		   `additionalRecords` are additional records sent by the name
+ *		   server, grouped by domain name.@n
+ *		   `context` is the context object originally passed.@n
+ *		   `exception` is an exception that happened during resolving,
+ *		   otherwise nil.
+ *		   @endparblock
  * @param context A context object to pass along to the target
  */
 - (void)asyncResolveHost: (OFString *)host
@@ -157,6 +242,67 @@ typedef enum of_dns_resolver_error_t {
 		  target: (id)target
 		selector: (SEL)selector
 		 context: (nullable id)context;
+
+/*!
+ * @brief Asynchronously resolves the specified host to socket addresses.
+ *
+ * @param host The host to resolve
+ * @param target The target to call with the result once resolving is done
+ * @param selector The selector to call on the target. The signature must be
+ *		   the following:
+ *		   @parblock
+ *
+ *		       void (OFDNSResolver *resolver, OFString *domainName,
+ *		           OFData *_Nullable, socketAddresses,
+ *		           id _Nullable context, id _Nullable exception)
+ *
+ *		   `resolver` is the acting resolver.@n
+ *		   `domainName` is the fully qualified domain name used to
+ *		   resolve the host.@n
+ *		   `socketAddresses` is OFData containing several
+ *		   of_socket_address_t.@n
+ *		   `context` is the context object originally passed.@n
+ *		   `exception` is an exception that happened during resolving,
+ *		   otherwise nil.
+ *		   @endparblock
+ * @param context A context object to pass along to the target
+ */
+- (void)asyncResolveSocketAddressesForHost: (OFString *)host
+				    target: (id)target
+				  selector: (SEL)selector
+				   context: (nullable id)context;
+
+/*!
+ * @brief Asynchronously resolves the specified host to socket addresses.
+ *
+ * @param host The host to resolve
+ * @param addressFamily The desired socket address family
+ * @param target The target to call with the result once resolving is done
+ * @param selector The selector to call on the target. The signature must be
+ *		   the following:
+ *		   @parblock
+ *
+ *		       void (OFDNSResolver *resolver, OFString *domainName,
+ *		           OFData *_Nullable socketAddresses,
+ *		           id _Nullable context, id _Nullable exception)
+ *
+ *		   `resolver` is the acting resolver.@n
+ *		   `domainName` is the fully qualified domain name used to
+ *		   resolve the host.@n
+ *		   `socketAddresses` is OFData containing several
+ *		   of_socket_address_t.@n
+ *		   `context` is the context object originally passed.@n
+ *		   `exception` is an exception that happened during resolving,
+ *		   otherwise nil.
+ *		   @endparblock
+ * @param context A context object to pass along to the target
+ */
+- (void)asyncResolveSocketAddressesForHost: (OFString *)host
+			     addressFamily: (of_socket_address_family_t)
+						addressFamily
+				    target: (id)target
+				  selector: (SEL)selector
+				   context: (nullable id)context;
 
 /*!
  * @brief Closes all sockets and cancels all ongoing requests.

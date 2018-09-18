@@ -58,6 +58,12 @@
 #endif
 
 #ifdef OF_AMIGAOS
+# ifdef OF_AMIGAOS4
+#  define __USE_INLINE__
+#  define __NOLIBBASE__
+#  define __NOGLOBALIFACE__
+# endif
+# include <proto/exec.h>
 # include <proto/dos.h>
 #endif
 
@@ -77,6 +83,12 @@
 #ifndef OF_AMIGAOS
 # define closeHandle(h) close(h)
 #else
+# ifdef OF_AMIGAOS4
+extern struct ExecIFace *IExec;
+static struct Library *DOSBase = NULL;
+static struct DOSIFace *IDOS = NULL;
+# endif
+
 struct of_file_handle {
 	of_file_handle_t previous, next;
 	BPTR handle;
@@ -104,6 +116,14 @@ OF_DESTRUCTOR()
 	for (of_file_handle_t iter = firstHandle; iter != NULL;
 	    iter = iter->next)
 		Close(iter->handle);
+
+# ifdef OF_AMIGAOS4
+	if (IDOS != NULL)
+		DropInterface(IDOS);
+
+	if (DOSBase != NULL)
+		CloseLibrary(DOSBase);
+# endif
 }
 #endif
 
@@ -175,6 +195,17 @@ parseMode(const char *mode, bool *append)
 
 #ifdef OF_NINTENDO_DS
 	if (!nitroFSInit(NULL))
+		@throw [OFInitializationFailedException
+		    exceptionWithClass: self];
+#endif
+
+#ifdef OF_AMIGAOS4
+	if ((DOSBase = OpenLibrary("dos.library", 36)) == NULL)
+		@throw [OFInitializationFailedException
+		    exceptionWithClass: self];
+
+	if ((IDOS = (struct DOSIFace *)
+	    GetInterface(DOSBase, "main", 1, NULL)) == NULL)
 		@throw [OFInitializationFailedException
 		    exceptionWithClass: self];
 #endif
@@ -274,8 +305,11 @@ parseMode(const char *mode, bool *append)
 			}
 
 			if (handle->append) {
-# ifdef OF_MORPHOS
+# if defined(OF_MORPHOS)
 				if (Seek64(handle->handle, 0,
+				    OFFSET_END) == -1) {
+# elif defined(OF_AMIGAOS4)
+				if (ChangeFilePosition(handle->handle, 0,
 				    OFFSET_END) == -1) {
 # else
 				if (Seek(handle->handle, 0, OFFSET_END) == -1) {
@@ -416,8 +450,10 @@ parseMode(const char *mode, bool *append)
 		@throw [OFOutOfRangeException exception];
 
 	if (_handle->append) {
-# ifdef OF_MORPHOS
+# if defined(OF_MORPHOS)
 		if (Seek64(_handle->handle, 0, OFFSET_END) == -1)
+# elif defined(OF_AMIGAOS4)
+		if (ChangeFilePosition(_handle->handle, 0, OFFSET_END) == -1)
 # else
 		if (Seek(_handle->handle, 0, OFFSET_END) == -1)
 # endif
@@ -491,8 +527,11 @@ parseMode(const char *mode, bool *append)
 							    errNo: EINVAL];
 	}
 
-# ifdef OF_MORPHOS
+# if defined(OF_MORPHOS)
 	if ((ret = Seek64(_handle->handle, offset, translatedWhence)) == 1)
+# elif defined(OF_AMIGAOS4)
+	if ((ret = ChangeFilePosition(_handle->handle, offset,
+	    translatedWhence)) == 1)
 # else
 	if ((ret = Seek(_handle->handle, offset, translatedWhence)) == 1)
 # endif

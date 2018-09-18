@@ -85,8 +85,14 @@ main(int argc, char *argv[])
 	int tid;
 #endif
 
-#if defined(OF_OBJFW_RUNTIME) && !defined(OF_WINDOWS)
-	/* This does not work on Win32 if ObjFW is built as a DLL */
+#if defined(OF_OBJFW_RUNTIME) && !defined(OF_WINDOWS) && !defined(OF_AMIGAOS)
+	/*
+	 * This does not work on Win32 if ObjFW is built as a DLL.
+	 *
+	 * On AmigaOS, some destructors need to be able to send messages.
+	 * Calling objc_exit() via atexit() would result in the runtime being
+	 * destructed before for the destructors ran.
+	 */
 	atexit(objc_exit);
 #endif
 
@@ -420,8 +426,10 @@ main(int argc, char *argv[])
 #if defined(OF_HAVE_SOCKETS) && defined(OF_HAVE_THREADS)
 	[self HTTPClientTests];
 #endif
+#ifdef OF_HAVE_SOCKETS
 	[self HTTPCookieTests];
 	[self HTTPCookieManagerTests];
+#endif
 	[self XMLParserTests];
 	[self XMLNodeTests];
 	[self XMLElementBuilderTests];
@@ -434,6 +442,9 @@ main(int argc, char *argv[])
 	[self pluginTests];
 #endif
 
+#ifdef OF_HAVE_SOCKETS
+	[self DNSResolverTests];
+#endif
 	[self systemInfoTests];
 	[self localeTests];
 

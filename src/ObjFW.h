@@ -77,15 +77,16 @@
 # import "OFTLSSocket.h"
 # import "OFKernelEventObserver.h"
 # import "OFDNSResolver.h"
+# import "OFDNSResourceRecord.h"
 #endif
-#import "OFHTTPCookie.h"
-#import "OFHTTPCookieManager.h"
-#import "OFHTTPRequest.h"
-#import "OFHTTPResponse.h"
 #ifdef OF_HAVE_SOCKETS
 # ifdef OF_HAVE_THREADS
 #  import "OFHTTPClient.h"
 # endif
+# import "OFHTTPCookie.h"
+# import "OFHTTPCookieManager.h"
+# import "OFHTTPRequest.h"
+# import "OFHTTPResponse.h"
 # import "OFHTTPServer.h"
 #endif
 

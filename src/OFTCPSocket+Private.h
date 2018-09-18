@@ -15,16 +15,18 @@
  * file.
  */
 
-#include "config.h"
+#import "OFTCPSocket.h"
 
-#import "platform.h"
+OF_ASSUME_NONNULL_BEGIN
 
-#if defined(OF_WINDOWS) || defined(OF_MSDOS)
-# import "OFString+PathAdditions_DOS.m"
-#elif defined(OF_AMIGAOS)
-# import "OFString+PathAdditions_AmigaOS.m"
-#elif defined(OF_NINTENDO_3DS) || defined(OF_WII)
-# import "OFString+PathAdditions_libfat.m"
-#else
-# import "OFString+PathAdditions_UNIX.m"
-#endif
+@interface OFTCPSocket ()
+@property (readonly, nonatomic) int of_socketError;
+
+- (bool)of_createSocketForAddress: (const of_socket_address_t *)address
+			    errNo: (int *)errNo;
+- (bool)of_connectSocketToAddress: (const of_socket_address_t *)address
+			    errNo: (int *)errNo;
+- (void)of_closeSocket;
+@end
+
+OF_ASSUME_NONNULL_END

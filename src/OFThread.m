@@ -33,6 +33,12 @@
 #include "platform.h"
 
 #ifdef OF_AMIGAOS
+# ifdef OF_AMIGAOS4
+#  define __USE_INLINE__
+#  define __NOLIBBASE__
+#  define __NOGLOBALIFACE__
+# endif
+# include <proto/exec.h>
 # include <proto/dos.h>
 #endif
 
@@ -52,7 +58,9 @@
 #import "OFAutoreleasePool.h"
 #import "OFDate.h"
 #import "OFDictionary.h"
-#import "OFList.h"
+#ifdef OF_HAVE_SOCKETS
+# import "OFDNSResolver.h"
+#endif
 #import "OFLocale.h"
 #import "OFRunLoop.h"
 #import "OFString.h"
@@ -85,7 +93,22 @@
 # define lrint(x) rint(x)
 #endif
 
-#ifdef OF_HAVE_THREADS
+#ifdef OF_AMIGAOS4
+extern struct ExecIFace *IExec;
+static struct Library *DOSBase = NULL;
+static struct DOSIFace *IDOS = NULL;
+
+OF_DESTRUCTOR()
+{
+	if (IDOS != NULL)
+		DropInterface(IDOS);
+
+	if (DOSBase != NULL)
+		CloseLibrary(DOSBase);
+}
+#endif
+
+#if defined(OF_HAVE_THREADS)
 # import "threading.h"
 
 static of_tlskey_t threadSelfKey;
@@ -130,6 +153,8 @@ callMain(id object)
 
 	[thread release];
 }
+#elif defined(OF_HAVE_SOCKETS)
+static OFDNSResolver *DNSResolver;
 #endif
 
 @implementation OFThread
@@ -183,6 +208,43 @@ callMain(id object)
 
 	return thread->_threadDictionary;
 }
+#elif defined(OF_AMIGAOS4)
++ (void)initialize
+{
+	if (self != [OFThread class])
+		return;
+
+	if ((DOSBase = OpenLibrary("dos.library", 36)) == NULL)
+		@throw [OFInitializationFailedException
+		    exceptionWithClass: self];
+
+	if ((IDOS = (struct DOSIFace *)
+	    GetInterface(DOSBase, "main", 1, NULL)) == NULL)
+		@throw [OFInitializationFailedException
+		    exceptionWithClass: self];
+}
+#endif
+
+#ifdef OF_HAVE_SOCKETS
++ (OFDNSResolver *)DNSResolver
+{
+# ifdef OF_HAVE_THREADS
+	OFThread *thread = of_tlskey_get(threadSelfKey);
+
+	if (thread == nil)
+		return nil;
+
+	if (thread->_DNSResolver == nil)
+		thread->_DNSResolver = [[OFDNSResolver alloc] init];
+
+	return thread->_DNSResolver;
+# else
+	if (DNSResolver == nil)
+		DNSResolver = [[OFDNSResolver alloc] init];
+
+	return DNSResolver;
+# endif
+}
 #endif
 
 + (void)sleepForTimeInterval: (of_time_interval_t)timeInterval
@@ -195,6 +257,11 @@ callMain(id object)
 		@throw [OFOutOfRangeException exception];
 
 	Sleep((unsigned int)(timeInterval * 1000));
+#elif defined(OF_NINTENDO_3DS)
+	if (timeInterval * 1000000000 > INT64_MAX)
+		@throw [OFOutOfRangeException exception];
+
+	svcSleepThread((int64_t)(timeInterval * 1000000000));
 #elif defined(HAVE_NANOSLEEP)
 	struct timespec rqtp;
 
@@ -219,11 +286,6 @@ callMain(id object)
 	counter = timeInterval * 60;
 	while (counter--)
 		swiWaitForVBlank();
-#elif defined(OF_NINTENDO_3DS)
-	if (timeInterval * 1000000000 > INT64_MAX)
-		@throw [OFOutOfRangeException exception];
-
-	svcSleepThread((int64_t)(timeInterval * 1000000000));
 #else
 	if (timeInterval > UINT_MAX)
 		@throw [OFOutOfRangeException exception];
@@ -354,6 +416,11 @@ callMain(id object)
 
 	[_threadDictionary release];
 	_threadDictionary = nil;
+
+# ifdef OF_HAVE_SOCKETS
+	[_DNSResolver release];
+	_DNSResolver = nil;
+# endif
 }
 
 - (void)start

@@ -35,11 +35,11 @@ int _OFString_PathAdditions_reference;
 		if ([component length] == 0)
 			continue;
 
-		if ([component isEqual: @"\\"] || [component isEqual: @"/"])
+		if ([component isEqual: @"/"])
 			continue;
 
-		if (!first && ![ret hasSuffix: @"\\"] && ![ret hasSuffix: @"/"])
-			[ret appendString: @"\\"];
+		if (!first && ![ret hasSuffix: @"/"])
+			[ret appendString: @"/"];
 
 		[ret appendString: component];
 
@@ -47,7 +47,7 @@ int _OFString_PathAdditions_reference;
 	}
 
 	if ([ret hasSuffix: @":"])
-		[ret appendString: @"\\"];
+		[ret appendString: @"/"];
 
 	[ret makeImmutable];
 
@@ -58,7 +58,7 @@ int _OFString_PathAdditions_reference;
 
 - (bool)isAbsolutePath
 {
-	return ([self containsString: @":\\"] || [self containsString: @":/"]);
+	return [self containsString: @":/"];
 }
 
 - (OFArray *)pathComponents
@@ -74,7 +74,7 @@ int _OFString_PathAdditions_reference;
 	}
 
 	for (i = 0; i < cStringLength; i++) {
-		if (cString[i] == '\\' || cString[i] == '/') {
+		if (cString[i] == '/') {
 			if (i - last != 0)
 				[ret addObject: [OFString
 				    stringWithUTF8String: cString + last
@@ -102,7 +102,7 @@ int _OFString_PathAdditions_reference;
 	ssize_t i;
 	OFString *ret;
 
-	if ([self hasSuffix: @":\\"] || [self hasSuffix: @":/"])
+	if ([self hasSuffix: @":/"])
 		return self;
 
 	cString = [self UTF8String];
@@ -113,8 +113,7 @@ int _OFString_PathAdditions_reference;
 		return @"";
 	}
 
-	if (cString[cStringLength - 1] == '\\' ||
-	    cString[cStringLength - 1] == '/')
+	if (cString[cStringLength - 1] == '/')
 		cStringLength--;
 
 	if (cStringLength == 0) {
@@ -126,7 +125,7 @@ int _OFString_PathAdditions_reference;
 		@throw [OFOutOfRangeException exception];
 
 	for (i = cStringLength - 1; i >= 0; i--) {
-		if (cString[i] == '\\' || cString[i] == '/') {
+		if (cString[i] == '/') {
 			i++;
 			break;
 		}
@@ -176,7 +175,7 @@ int _OFString_PathAdditions_reference;
 	size_t cStringLength;
 	OFString *ret;
 
-	if ([self hasSuffix: @":\\"] || [self hasSuffix: @":/"])
+	if ([self hasSuffix: @":/"])
 		return self;
 
 	cString = [self UTF8String];
@@ -187,8 +186,7 @@ int _OFString_PathAdditions_reference;
 		return @"";
 	}
 
-	if (cString[cStringLength - 1] == '\\' ||
-	    cString[cStringLength - 1] == '/')
+	if (cString[cStringLength - 1] == '/')
 		cStringLength--;
 
 	if (cStringLength == 0) {
@@ -197,7 +195,7 @@ int _OFString_PathAdditions_reference;
 	}
 
 	for (size_t i = cStringLength; i >= 1; i--) {
-		if (cString[i - 1] == '\\' || cString[i - 1] == '/') {
+		if (cString[i - 1] == '/') {
 			ret = [[OFString alloc] initWithUTF8String: cString
 							    length: i - 1];
 
@@ -293,10 +291,10 @@ int _OFString_PathAdditions_reference;
 		}
 	}
 
-	if ([self hasSuffix: @"\\"] || [self hasSuffix: @"/"])
+	if ([self hasSuffix: @"/"])
 		[array addObject: @""];
 
-	ret = [[array componentsJoinedByString: @"\\"] retain];
+	ret = [[array componentsJoinedByString: @"/"] retain];
 
 	objc_autoreleasePoolPop(pool);
 
@@ -305,12 +303,12 @@ int _OFString_PathAdditions_reference;
 
 - (OFString *)stringByAppendingPathComponent: (OFString *)component
 {
-	if ([self hasSuffix: @"\\"] || [self hasSuffix: @"/"])
+	if ([self hasSuffix: @"/"])
 		return [self stringByAppendingString: component];
 	else {
 		OFMutableString *ret = [[self mutableCopy] autorelease];
 
-		[ret appendString: @"\\"];
+		[ret appendString: @"/"];
 		[ret appendString: component];
 
 		[ret makeImmutable];

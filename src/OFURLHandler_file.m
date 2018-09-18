@@ -49,6 +49,7 @@
 
 #import "OFCreateDirectoryFailedException.h"
 #import "OFCreateSymbolicLinkFailedException.h"
+#import "OFInitializationFailedException.h"
 #import "OFInvalidArgumentException.h"
 #import "OFLinkFailedException.h"
 #import "OFMoveItemFailedException.h"
@@ -67,8 +68,17 @@
 #endif
 
 #ifdef OF_AMIGAOS
+# ifdef OF_AMIGAOS4
+#  define __USE_INLINE__
+#  define __NOLIBBASE__
+#  define __NOGLOBALIFACE__
+# endif
+# include <proto/exec.h>
 # include <proto/dos.h>
 # include <proto/locale.h>
+# ifdef OF_AMIGAOS4
+#  define DeleteFile(path) Delete(path)
+# endif
 #endif
 
 #if defined(OF_WINDOWS)
@@ -100,6 +110,29 @@ static OFMutex *readdirMutex;
 static WINAPI BOOLEAN (*func_CreateSymbolicLinkW)(LPCWSTR, LPCWSTR, DWORD);
 #endif
 
+#ifdef OF_AMIGAOS4
+extern struct ExecIFace *IExec;
+static struct Library *DOSBase = NULL;
+static struct DOSIFace *IDOS = NULL;
+static struct Library *LocaleBase = NULL;
+static struct LocaleIFace *ILocale = NULL;
+
+OF_DESTRUCTOR()
+{
+	if (ILocale != NULL)
+		DropInterface(ILocale);
+
+	if (LocaleBase != NULL)
+		CloseLibrary(LocaleBase);
+
+	if (IDOS != NULL)
+		DropInterface(IDOS);
+
+	if (DOSBase != NULL)
+		CloseLibrary(DOSBase);
+}
+#endif
+
 static int
 of_stat(OFString *path, of_stat_t *buffer)
 {
@@ -107,9 +140,14 @@ of_stat(OFString *path, of_stat_t *buffer)
 	return _wstat64([path UTF16String], buffer);
 #elif defined(OF_AMIGAOS)
 	BPTR lock;
+# ifdef OF_AMIGAOS4
+	struct ExamineData *ed;
+# else
 	struct FileInfoBlock fib;
+# endif
 	of_time_interval_t timeInterval;
 	struct Locale *locale;
+	struct DateStamp *date;
 
 	if ((lock = Lock([path cStringWithEncoding: [OFLocale encoding]],
 	    SHARED_LOCK)) == 0) {
@@ -129,8 +167,10 @@ of_stat(OFString *path, of_stat_t *buffer)
 		return -1;
 	}
 
-# ifdef OF_MORPHOS
+# if defined(OF_MORPHOS)
 	if (!Examine64(lock, &fib, TAG_DONE)) {
+# elif defined(OF_AMIGAOS4)
+	if ((ed = ExamineObjectTags(EX_FileLockInput, lock, TAG_END)) == NULL) {
 # else
 	if (!Examine(lock, &fib)) {
 # endif
@@ -142,12 +182,18 @@ of_stat(OFString *path, of_stat_t *buffer)
 
 	UnLock(lock);
 
-# ifdef OF_MORPHOS
+# if defined(OF_MORPHOS)
 	buffer->st_size = fib.fib_Size64;
+# elif defined(OF_AMIGAOS4)
+	buffer->st_size = ed->FileSize;
 # else
 	buffer->st_size = fib.fib_Size;
 # endif
+# ifdef OF_AMIGAOS4
+	buffer->st_mode = (EXD_IS_DIRECTORY(ed) ? S_IFDIR : S_IFREG);
+# else
 	buffer->st_mode = (fib.fib_DirEntryType > 0 ? S_IFDIR : S_IFREG);
+# endif
 
 	timeInterval = 252460800;	/* 1978-01-01 */
 
@@ -160,12 +206,20 @@ of_stat(OFString *path, of_stat_t *buffer)
 	timeInterval += locale->loc_GMTOffset * 60.0;
 	CloseLocale(locale);
 
-	timeInterval += fib.fib_Date.ds_Days * 86400.0;
-	timeInterval += fib.fib_Date.ds_Minute * 60.0;
-	timeInterval +=
-	    fib.fib_Date.ds_Tick / (of_time_interval_t)TICKS_PER_SECOND;
+# ifdef OF_AMIGAOS4
+	date = &ed->Date;
+# else
+	date = &fib.fib_Date;
+# endif
+	timeInterval += date->ds_Days * 86400.0;
+	timeInterval += date->ds_Minute * 60.0;
+	timeInterval += date->ds_Tick / (of_time_interval_t)TICKS_PER_SECOND;
 
 	buffer->st_atime = buffer->st_mtime = buffer->st_ctime = timeInterval;
+
+# ifdef OF_AMIGAOS4
+	FreeDosObject(DOS_EXAMINEDATA, ed);
+# endif
 
 	return 0;
 #elif defined(OF_HAVE_OFF64_T)
@@ -178,7 +232,8 @@ of_stat(OFString *path, of_stat_t *buffer)
 static int
 of_lstat(OFString *path, of_stat_t *buffer)
 {
-#if defined(HAVE_LSTAT) && !defined(OF_WINDOWS) && !defined(OF_AMIGAOS)
+#if defined(HAVE_LSTAT) && !defined(OF_WINDOWS) && !defined(OF_AMIGAOS) && \
+    !defined(OF_NINTENDO_3DS) && !defined(OF_WII)
 # ifdef OF_HAVE_OFF64_T
 	return lstat64([path cStringWithEncoding: [OFLocale encoding]], buffer);
 # else
@@ -386,11 +441,25 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	if (self != [OFURLHandler_file class])
 		return;
 
-	/*
-	 * Make sure OFFile is initialized.
-	 * On some systems, this is needed to initialize the file system driver.
-	 */
-	[OFFile class];
+#ifdef OF_AMIGAOS4
+	if ((DOSBase = OpenLibrary("dos.library", 36)) == NULL)
+		@throw [OFInitializationFailedException
+		    exceptionWithClass: self];
+
+	if ((IDOS = (struct DOSIFace *)
+	    GetInterface(DOSBase, "main", 1, NULL)) == NULL)
+		@throw [OFInitializationFailedException
+		    exceptionWithClass: self];
+
+	if ((LocaleBase = OpenLibrary("locale.library", 38)) == NULL)
+		@throw [OFInitializationFailedException
+		    exceptionWithClass: self];
+
+	if ((ILocale = (struct LocaleIFace *)
+	    GetInterface(LocaleBase, "main", 1, NULL)) == NULL)
+		@throw [OFInitializationFailedException
+		    exceptionWithClass: self];
+#endif
 
 #if defined(OF_HAVE_CHOWN) && defined(OF_HAVE_THREADS)
 	passwdMutex = [[OFMutex alloc] init];
@@ -405,6 +474,12 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 		    (WINAPI BOOLEAN (*)(LPCWSTR, LPCWSTR, DWORD))
 		    GetProcAddress(module, "CreateSymbolicLinkW");
 #endif
+
+	/*
+	 * Make sure OFFile is initialized.
+	 * On some systems, this is needed to initialize the file system driver.
+	 */
+	[OFFile class];
 }
 
 + (bool)of_directoryExistsAtPath: (OFString *)path
@@ -767,7 +842,6 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 #elif defined(OF_AMIGAOS)
 	of_string_encoding_t encoding = [OFLocale encoding];
 	BPTR lock;
-	struct FileInfoBlock fib;
 
 	if ((lock = Lock([path cStringWithEncoding: encoding],
 	    SHARED_LOCK)) == 0) {
@@ -792,6 +866,36 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	}
 
 	@try {
+# ifdef OF_AMIGAOS4
+		struct ExamineData *ed;
+		APTR context;
+
+		if ((context = ObtainDirContextTags(EX_FileLockInput, lock,
+		    EX_DoCurrentDir, TRUE, EX_DataFields, EXF_NAME,
+		    TAG_END)) == NULL)
+			@throw [OFOpenItemFailedException
+			    exceptionWithURL: URL
+					mode: nil
+				       errNo: 0];
+
+		@try {
+			while ((ed = ExamineDir(context)) != NULL) {
+				OFString *file = [[OFString alloc]
+				    initWithCString: ed->Name
+					   encoding: encoding];
+
+				@try {
+					[files addObject: file];
+				} @finally {
+					[file release];
+				}
+			}
+		} @finally {
+			ReleaseDirContext(context);
+		}
+# else
+		struct FileInfoBlock fib;
+
 		if (!Examine(lock, &fib))
 			@throw [OFOpenItemFailedException
 			    exceptionWithURL: URL
@@ -799,17 +903,17 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 				       errNo: 0];
 
 		while (ExNext(lock, &fib)) {
-			OFString *file;
-
-			file = [[OFString alloc]
+			OFString *file = [[OFString alloc]
 			    initWithCString: fib.fib_FileName
 				   encoding: encoding];
+
 			@try {
 				[files addObject: file];
 			} @finally {
 				[file release];
 			}
 		}
+# endif
 
 		if (IoErr() != ERROR_NO_MORE_ENTRIES)
 			@throw [OFReadFailedException
