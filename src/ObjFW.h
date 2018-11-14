@@ -129,6 +129,18 @@
 # import "OFWindowsRegistryKey.h"
 #endif
 
+#import "OFASN1BitString.h"
+#import "OFASN1Boolean.h"
+#import "OFASN1Enumerated.h"
+#import "OFASN1IA5String.h"
+#import "OFASN1Integer.h"
+#import "OFASN1NumericString.h"
+#import "OFASN1ObjectIdentifier.h"
+#import "OFASN1OctetString.h"
+#import "OFASN1PrintableString.h"
+#import "OFASN1UTF8String.h"
+#import "OFASN1Value.h"
+
 #import "OFAllocFailedException.h"
 #import "OFException.h"
 #ifdef OF_HAVE_SOCKETS
@@ -243,9 +255,6 @@
 #import "instance.h"
 #import "of_asprintf.h"
 #import "of_strptime.h"
-#ifdef OF_HAVE_SOCKETS
-# import "resolver.h"
-#endif
 #import "pbkdf2.h"
 #import "scrypt.h"
 #import "unicode.h"

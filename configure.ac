@@ -26,12 +26,27 @@ dnl Used to disable checking for -pedantic on some platforms where it's broken
 check_pedantic="yes"
 
 case "$host" in
+	arm-*-riscos*)
+		AS_IF([test x"$OBJCFLAGS" != x""], [
+			OBJCFLAGS="-O2 -g"
+		])
+		flags="-mfloat-abi=softfp -mfpu=vfp -mlibscl"
+		ASFLAGS="$ASFLAGS -mfloat-abi=softfp -mfpu=vfp"
+		OBJCFLAGS="$OBJCFLAGS $flags"
+		OBJFW_OBJCFLAGS="$OBJFW_OBJCFLAGS $flags"
+		LDFLAGS="$LDFLAGS $flags"
+
+		enable_shared="no"
+		enable_threads="no"
+		enable_sockets="no"
+		enable_files="no"
+		ac_cv_snprintf_useful_ret="yes"
+		;;
 	m68k-*-amigaos*)
 		AS_IF([test x"$OBJCFLAGS" != x""], [
-			OBJCFLAGS="$OBJCFLAGS -noixemul"
-		], [
-			OBJCFLAGS="-O0 -g -noixemul"
+			OBJCFLAGS="-O0 -g"
 		])
+		OBJCFLAGS="$OBJCFLAGS -noixemul"
 		OBJFW_OBJCFLAGS="$OBJFW_OBJCFLAGS -noixemul"
 		LDFLAGS="$LDFLAGS -noixemul"
 
@@ -58,10 +73,9 @@ case "$host" in
 	*-morphos*)
 		AS_IF([test x"$with_ixemul" != x"yes"], [
 			AS_IF([test x"$OBJCFLAGS" != x""], [
-				OBJCFLAGS="$OBJCFLAGS -noixemul"
-			], [
-				OBJCFLAGS="-O2 -g -noixemul"
+				OBJCFLAGS="-O2 -g"
 			])
+			OBJCFLAGS="$OBJCFLAGS -noixemul"
 			OBJFW_OBJCFLAGS="$OBJFW_OBJCFLAGS -noixemul"
 			LDFLAGS="$LDFLAGS -noixemul"
 			enable_files="yes"	# Required for reading ENV:
@@ -98,10 +112,9 @@ case "$host" in
 		])
 
 		AS_IF([test x"$OBJCFLAGS" != x""], [
-			OBJCFLAGS="$OBJCFLAGS -G0"
-		], [
-			OBJCFLAGS="-O2 -G0"
+			OBJCFLAGS="-O2"
 		])
+		OBJCFLAGS="$OBJCFLAGS -G0"
 		OBJFW_OBJCFLAGS="$OBJFW_OBJCFLAGS -G0"
 		CPPFLAGS="$CPPFLAGS -I$DEVKITPSP/psp/sdk/include"
 		LDFLAGS="$LDFLAGS -G0"
@@ -328,6 +341,7 @@ AS_IF([test x"$enable_shared" != x"no"], [
 		build_framework="yes"
 	])
 ], [
+	AC_DEFINE(OF_NO_SHARED, 1, [Whether no shared library was built])
 	AC_SUBST(LIBOBJFW_DEP, "../src/libobjfw.a")
 	AC_SUBST(LIBOBJFW_DEP_LVL2, "../../src/libobjfw.a")
 ])
@@ -1223,6 +1237,8 @@ AS_IF([test x"$enable_sockets" != x"no"], [
 
 	AC_CHECK_MEMBER([struct sockaddr_in6.sin6_addr], [
 		AC_EGREP_CPP(egrep_cpp_yes, [
+			typedef int BOOL;
+
 			#ifdef OF_HAVE_SYS_SOCKET_H
 			# include <sys/socket.h>
 			#endif
@@ -1246,6 +1262,8 @@ AS_IF([test x"$enable_sockets" != x"no"], [
 		])
 	], [
 	], [
+		typedef int BOOL;
+
 		#ifdef OF_HAVE_NETINET_IN_H
 		# include <netinet/in.h>
 		#endif
@@ -1307,98 +1325,6 @@ AS_IF([test x"$enable_sockets" != x"no"], [
 			])
 			;;
 	esac
-
-	AC_MSG_CHECKING(for getaddrinfo)
-	AC_TRY_COMPILE([
-		#include <stddef.h>
-		#ifdef OF_HAVE_SYS_TYPES_H
-		# include <sys/types.h>
-		#endif
-		#ifdef HAVE_SYS_SOCKET_H
-		# include <sys/socket.h>
-		#endif
-		#ifdef HAVE_NETDB_H
-		# include <netdb.h>
-		#endif
-		#ifdef _WIN32
-		typedef unsigned char BOOL;
-		# include <ws2tcpip.h>
-		#endif
-	], [
-		struct addrinfo ai;
-		getaddrinfo(NULL, NULL, NULL, NULL);
-	], [
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_GETADDRINFO, 1, [Whether we have getaddrinfo()])
-
-		AS_IF([test x"$enable_threads" != x"no"], [
-			AC_MSG_CHECKING(whether getaddrinfo is thread-safe)
-
-			case "$host_os" in
-				darwin[[12345]].*)
-					have_threadsafe_getaddrinfo="no"
-					;;
-				darwin*)
-					have_threadsafe_getaddrinfo="yes"
-					;;
-				freebsd[[1234]].* | freebsd5.[[1234]]*)
-					have_threadsafe_getaddrinfo="no"
-					;;
-				freebsd*)
-					have_threadsafe_getaddrinfo="yes"
-					;;
-				netbsd[[123]].*)
-					have_threadsafe_getaddrinfo="no"
-					;;
-				netbsd*)
-					have_threadsafe_getaddrinfo="yes"
-					;;
-				solaris*)
-					have_threadsafe_getaddrinfo="yes"
-					;;
-				*)
-					have_threadsafe_getaddrinfo="unknown"
-					;;
-			esac
-
-			AS_IF([test x"$have_threadsafe_getaddrinfo" = \
-					x"unknown"], [
-				AC_EGREP_CPP(egrep_cpp_yes, [
-					#ifdef OF_HAVE_SYS_TYPES_H
-					# include <sys/types.h>
-					#endif
-					#ifdef HAVE_SYS_SOCKET_H
-					# include <sys/socket.h>
-					#endif
-					#ifdef HAVE_NETDB_H
-					# include <netdb.h>
-					#endif
-					#ifdef _WIN32
-					# define _WIN32_WINNT 0x0501
-					# include <windows.h>
-					# include <ws2tcpip.h>
-					#endif
-
-					#ifdef h_errno
-					egrep_cpp_yes
-					#end
-				], [
-					have_threadsafe_getaddrinfo="yes"
-				], [
-					have_threadsafe_getaddrinfo="no"
-				])
-			])
-
-			AS_IF([test x"$have_threadsafe_getaddrinfo" = x"yes"], [
-				AC_DEFINE(HAVE_THREADSAFE_GETADDRINFO, 1,
-					[Whether getaddrinfo is thread-safe])
-			])
-
-			AC_MSG_RESULT($have_threadsafe_getaddrinfo)
-		])
-	], [
-		AC_MSG_RESULT(no)
-	])
 
 	AS_IF([test x"$enable_threads" != x"no"], [
 		AC_SUBST(OFHTTPCLIENTTESTS_M, "OFHTTPClientTests.m")

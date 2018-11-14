@@ -547,8 +547,8 @@ IPv6String(const of_socket_address_t *address, uint16_t *port)
 		for (int_fast8_t i = 0; i < maxZerosStart; i += 2) {
 			[string appendFormat:
 			    (first ? @"%x" : @":%x"),
-			    (addrIn6->sin6_addr.s6_addr[i] << 8) |
-			    addrIn6->sin6_addr.s6_addr[i + 1]];
+			    (addrIn6->sin6_addr.s6_addr[(uint_fast8_t)i] << 8) |
+			    addrIn6->sin6_addr.s6_addr[(uint_fast8_t)i + 1]];
 			first = false;
 		}
 
@@ -559,8 +559,8 @@ IPv6String(const of_socket_address_t *address, uint16_t *port)
 		    i < 16; i += 2) {
 			[string appendFormat:
 			    (first ? @"%x" : @":%x"),
-			    (addrIn6->sin6_addr.s6_addr[i] << 8) |
-			    addrIn6->sin6_addr.s6_addr[i + 1]];
+			    (addrIn6->sin6_addr.s6_addr[(uint_fast8_t)i] << 8) |
+			    addrIn6->sin6_addr.s6_addr[(uint_fast8_t)i + 1]];
 			first = false;
 		}
 	} else {
@@ -604,6 +604,19 @@ of_socket_address_set_port(of_socket_address_t *address, uint16_t port)
 	case OF_SOCKET_ADDRESS_FAMILY_IPV6:
 		address->sockaddr.in6.sin6_port = OF_BSWAP16_IF_LE(port);
 		break;
+	default:
+		@throw [OFInvalidArgumentException exception];
+	}
+}
+
+uint16_t
+of_socket_address_get_port(const of_socket_address_t *address)
+{
+	switch (address->family) {
+	case OF_SOCKET_ADDRESS_FAMILY_IPV4:
+		return OF_BSWAP16_IF_LE(address->sockaddr.in.sin_port);
+	case OF_SOCKET_ADDRESS_FAMILY_IPV6:
+		return OF_BSWAP16_IF_LE(address->sockaddr.in6.sin6_port);
 	default:
 		@throw [OFInvalidArgumentException exception];
 	}

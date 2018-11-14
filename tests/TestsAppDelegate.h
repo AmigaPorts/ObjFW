@@ -87,6 +87,10 @@ enum {
 	     inModule: (OFString *)module;
 @end
 
+@interface TestsAppDelegate (OFASN1DERValueTests)
+- (void)ASN1DERValueTests;
+@end
+
 @interface TestsAppDelegate (OFArrayTests)
 - (void)arrayTests;
 @end

@@ -16,6 +16,7 @@
  */
 
 #import "OFStreamSocket.h"
+#import "OFRunLoop.h"
 
 #import "socket.h"
 
@@ -34,8 +35,8 @@ OF_ASSUME_NONNULL_BEGIN
  * @param exception An exception which occurred while connecting the socket or
  *		    `nil` on success
  */
-typedef void (^of_tcp_socket_async_connect_block_t)(OFTCPSocket *socket,
-    id _Nullable exception);
+typedef void (^of_tcp_socket_async_connect_block_t)(
+    OF_KINDOF(OFTCPSocket *) socket, id _Nullable exception);
 
 /*!
  * @brief A block which is called when the socket accepted a connection.
@@ -47,8 +48,9 @@ typedef void (^of_tcp_socket_async_connect_block_t)(OFTCPSocket *socket,
  * @return A bool whether the same block should be used for the next incoming
  *	   connection
  */
-typedef bool (^of_tcp_socket_async_accept_block_t)(OFTCPSocket *socket,
-    OFTCPSocket *acceptedSocket, id _Nullable exception);
+typedef bool (^of_tcp_socket_async_accept_block_t)(
+    OF_KINDOF(OFTCPSocket *) socket, OF_KINDOF(OFTCPSocket *) acceptedSocket,
+    id _Nullable exception);
 #endif
 
 /*!
@@ -170,6 +172,25 @@ typedef bool (^of_tcp_socket_async_accept_block_t)(OFTCPSocket *socket,
 		  selector: (SEL)selector
 		   context: (nullable id)context;
 
+/*!
+ * @brief Asynchronously connect the OFTCPSocket to the specified destination.
+ *
+ * @param host The host to connect to
+ * @param port The port on the host to connect to
+ * @param runLoopMode The run loop mode in which to perform the async connect
+ * @param target The target on which to call the selector once the connection
+ *		 has been established
+ * @param selector The selector to call on the target. The signature must be
+ *		   `void (OFTCPSocket *socket, id context, id exception)`.
+ * @param context A context object to pass along to the target
+ */
+- (void)asyncConnectToHost: (OFString *)host
+		      port: (uint16_t)port
+	       runLoopMode: (of_run_loop_mode_t)runLoopMode
+		    target: (id)target
+		  selector: (SEL)selector
+		   context: (nullable id)context;
+
 #ifdef OF_HAVE_BLOCKS
 /*!
  * @brief Asynchronously connect the OFTCPSocket to the specified destination.
@@ -180,6 +201,19 @@ typedef bool (^of_tcp_socket_async_accept_block_t)(OFTCPSocket *socket,
  */
 - (void)asyncConnectToHost: (OFString *)host
 		      port: (uint16_t)port
+		     block: (of_tcp_socket_async_connect_block_t)block;
+
+/*!
+ * @brief Asynchronously connect the OFTCPSocket to the specified destination.
+ *
+ * @param host The host to connect to
+ * @param port The port on the host to connect to
+ * @param runLoopMode The run loop mode in which to perform the async connect
+ * @param block The block to execute once the connection has been established
+ */
+- (void)asyncConnectToHost: (OFString *)host
+		      port: (uint16_t)port
+	       runLoopMode: (of_run_loop_mode_t)runLoopMode
 		     block: (of_tcp_socket_async_connect_block_t)block;
 #endif
 
@@ -230,6 +264,24 @@ typedef bool (^of_tcp_socket_async_accept_block_t)(OFTCPSocket *socket,
 		     selector: (SEL)selector
 		      context: (nullable id)context;
 
+/*!
+ * @brief Asynchronously accept an incoming connection.
+ *
+ * @param runLoopMode The run loop mode in which to perform the async accept
+ * @param target The target on which to execute the selector when a new
+ *		 connection has been accepted. The method returns whether the
+ *		 next incoming connection should be accepted by the specified
+ *		 block as well.
+ * @param selector The selector to call on the target. The signature must be
+ *		   `bool (OFTCPSocket *socket, OFTCPSocket *acceptedSocket,
+ *		   id context, id exception)`.
+ * @param context A context object to pass along to the target
+ */
+- (void)asyncAcceptWithRunLoopMode: (of_run_loop_mode_t)runLoopMode
+			    target: (id)target
+			  selector: (SEL)selector
+			   context: (nullable id)context;
+
 #ifdef OF_HAVE_BLOCKS
 /*!
  * @brief Asynchronously accept an incoming connection.
@@ -239,6 +291,17 @@ typedef bool (^of_tcp_socket_async_accept_block_t)(OFTCPSocket *socket,
  *		by the specified block as well.
  */
 - (void)asyncAcceptWithBlock: (of_tcp_socket_async_accept_block_t)block;
+
+/*!
+ * @brief Asynchronously accept an incoming connection.
+ *
+ * @param runLoopMode The run loop mode in which to perform the async accept
+ * @param block The block to execute when a new connection has been accepted.
+ *		Returns whether the next incoming connection should be accepted
+ *		by the specified block as well.
+ */
+- (void)asyncAcceptWithRunLoopMode: (of_run_loop_mode_t)runLoopMode
+			     block: (of_tcp_socket_async_accept_block_t)block;
 #endif
 @end
 

@@ -15,21 +15,13 @@
  * file.
  */
 
-#import "OFTCPSocket.h"
+#import "OFUDPSocket.h"
 
 OF_ASSUME_NONNULL_BEGIN
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-extern int _OFTCPSocket_SOCKS5_reference;
-#ifdef __cplusplus
-}
-#endif
-
-@interface OFTCPSocket (SOCKS5)
-- (void)OF_SOCKS5ConnectToHost: (OFString *)host
-			  port: (uint16_t)port;
+@interface OFUDPSocket ()
+- (uint16_t)of_bindToAddress: (of_socket_address_t *)address
+		   extraType: (int)extraType;
 @end
 
 OF_ASSUME_NONNULL_END

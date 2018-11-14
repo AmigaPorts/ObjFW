@@ -41,6 +41,7 @@
 
 #import "OFChangeCurrentDirectoryPathFailedException.h"
 #import "OFCopyItemFailedException.h"
+#import "OFCreateDirectoryFailedException.h"
 #import "OFGetCurrentDirectoryPathFailedException.h"
 #import "OFInitializationFailedException.h"
 #import "OFInvalidArgumentException.h"
@@ -49,7 +50,6 @@
 #import "OFOutOfRangeException.h"
 #import "OFRemoveItemFailedException.h"
 #import "OFRetrieveItemAttributesFailedException.h"
-#import "OFUndefinedKeyException.h"
 #import "OFUnsupportedProtocolException.h"
 
 #ifdef OF_WINDOWS
@@ -80,38 +80,6 @@ static struct DOSIFace *IDOS = NULL;
 
 static OFFileManager *defaultManager;
 
-const of_file_attribute_key_t of_file_attribute_key_size =
-    @"of_file_attribute_key_size";
-const of_file_attribute_key_t of_file_attribute_key_type =
-    @"of_file_attribute_key_type";
-const of_file_attribute_key_t of_file_attribute_key_posix_permissions =
-    @"of_file_attribute_key_posix_permissions";
-const of_file_attribute_key_t of_file_attribute_key_posix_uid =
-    @"of_file_attribute_key_posix_uid";
-const of_file_attribute_key_t of_file_attribute_key_posix_gid =
-    @"of_file_attribute_key_posix_gid";
-const of_file_attribute_key_t of_file_attribute_key_owner =
-    @"of_file_attribute_key_owner";
-const of_file_attribute_key_t of_file_attribute_key_group =
-    @"of_file_attribute_key_group";
-const of_file_attribute_key_t of_file_attribute_key_last_access_date =
-    @"of_file_attribute_key_last_access_date";
-const of_file_attribute_key_t of_file_attribute_key_modification_date =
-    @"of_file_attribute_key_modification_date";
-const of_file_attribute_key_t of_file_attribute_key_status_change_date =
-    @"of_file_attribute_key_status_change_date";
-const of_file_attribute_key_t of_file_attribute_key_symbolic_link_destination =
-    @"of_file_attribute_key_symbolic_link_destination";
-
-const of_file_type_t of_file_type_regular = @"of_file_type_regular";
-const of_file_type_t of_file_type_directory = @"of_file_type_directory";
-const of_file_type_t of_file_type_symbolic_link = @"of_file_type_symbolic_link";
-const of_file_type_t of_file_type_fifo = @"of_file_type_fifo";
-const of_file_type_t of_file_type_character_special =
-    @"of_file_type_character_special";
-const of_file_type_t of_file_type_block_special = @"of_file_type_block_special";
-const of_file_type_t of_file_type_socket = @"of_file_type_socket";
-
 #ifdef OF_AMIGAOS
 static bool dirChanged = false;
 static BPTR originalDirLock = 0;
@@ -130,19 +98,6 @@ OF_DESTRUCTOR()
 # endif
 }
 #endif
-
-static id
-attributeForKeyOrException(of_file_attributes_t attributes,
-    of_file_attribute_key_t key)
-{
-	id object = [attributes objectForKey: key];
-
-	if (object == nil)
-		@throw [OFUndefinedKeyException exceptionWithObject: attributes
-								key: key];
-
-	return object;
-}
 
 @implementation OFFileManager
 + (void)initialize
@@ -365,6 +320,28 @@ attributeForKeyOrException(of_file_attributes_t attributes,
 	if (!createParents) {
 		[self createDirectoryAtURL: URL];
 		return;
+	}
+
+	/*
+	 * Try blindly creating the directory first.
+	 *
+	 * The reason for this is that we might be sandboxed, so attempting to
+	 * create any of the parent directories will fail, while creating the
+	 * directory itself will work.
+	 */
+	if ([self directoryExistsAtURL: URL])
+		return;
+
+	@try {
+		[self createDirectoryAtURL: URL];
+		return;
+	} @catch (OFCreateDirectoryFailedException *e) {
+		/*
+		 * If we didn't fail because any of the parents is missing,
+		 * there is no point in trying to create the parents.
+		 */
+		if ([e errNo] != ENOENT)
+			@throw e;
 	}
 
 	components = [[URL URLEncodedPath] componentsSeparatedByString: @"/"];
@@ -838,71 +815,6 @@ attributeForKeyOrException(of_file_attributes_t attributes,
 	objc_autoreleasePoolPop(pool);
 }
 #endif
-@end
-
-@implementation OFDictionary (FileAttributes)
-- (uintmax_t)fileSize
-{
-	return [attributeForKeyOrException(self, of_file_attribute_key_size)
-	    uIntMaxValue];
-}
-
-- (of_file_type_t)fileType
-{
-	return attributeForKeyOrException(self, of_file_attribute_key_type);
-}
-
-- (uint16_t)filePOSIXPermissions
-{
-	return [attributeForKeyOrException(self,
-	    of_file_attribute_key_posix_permissions) uInt16Value];
-}
-
-- (uint32_t)filePOSIXUID
-{
-	return [attributeForKeyOrException(self,
-	    of_file_attribute_key_posix_uid) uInt32Value];
-}
-
-- (uint32_t)filePOSIXGID
-{
-	return [attributeForKeyOrException(self,
-	    of_file_attribute_key_posix_gid) uInt32Value];
-}
-
-- (OFString *)fileOwner
-{
-	return attributeForKeyOrException(self, of_file_attribute_key_owner);
-}
-
-- (OFString *)fileGroup
-{
-	return attributeForKeyOrException(self, of_file_attribute_key_group);
-}
-
-- (OFDate *)fileLastAccessDate
-{
-	return attributeForKeyOrException(self,
-	    of_file_attribute_key_last_access_date);
-}
-
-- (OFDate *)fileModificationDate
-{
-	return attributeForKeyOrException(self,
-	    of_file_attribute_key_modification_date);
-}
-
-- (OFDate *)fileStatusChangeDate
-{
-	return attributeForKeyOrException(self,
-	    of_file_attribute_key_status_change_date);
-}
-
-- (OFString *)fileSymbolicLinkDestination
-{
-	return attributeForKeyOrException(self,
-	    of_file_attribute_key_symbolic_link_destination);
-}
 @end
 
 @implementation OFFileManager_default

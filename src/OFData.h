@@ -42,6 +42,7 @@ enum {
 	unsigned char *_items;
 	size_t _count, _itemSize;
 	bool _freeWhenDone;
+	OFData *_parentData;
 }
 
 /*!
@@ -280,6 +281,14 @@ enum {
 - (const void *)itemAtIndex: (size_t)index OF_RETURNS_INNER_POINTER;
 
 /*!
+ * @brief Returns the data in the specified range as a new OFData.
+ *
+ * @param range The range of the data for the new OFData
+ * @return The data in the specified range as a new OFData
+ */
+- (OFData *)subdataWithRange: (of_range_t)range;
+
+/*!
  * @brief Returns the range of the data.
  *
  * @param data The data to search for
@@ -316,5 +325,6 @@ enum {
 OF_ASSUME_NONNULL_END
 
 #import "OFMutableData.h"
+#import "OFData+ASN1DERValue.h"
 #import "OFData+CryptoHashing.h"
 #import "OFData+MessagePackValue.h"

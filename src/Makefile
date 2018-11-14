@@ -10,7 +10,18 @@ FRAMEWORK = ${OBJFW_FRAMEWORK}
 LIB_MAJOR = ${OBJFW_LIB_MAJOR}
 LIB_MINOR = ${OBJFW_LIB_MINOR}
 
-SRCS = OFApplication.m			\
+SRCS = OFASN1BitString.m		\
+       OFASN1Boolean.m			\
+       OFASN1Enumerated.m		\
+       OFASN1IA5String.m		\
+       OFASN1Integer.m			\
+       OFASN1NumericString.m		\
+       OFASN1ObjectIdentifier.m		\
+       OFASN1OctetString.m		\
+       OFASN1PrintableString.m		\
+       OFASN1UTF8String.m		\
+       OFASN1Value.m			\
+       OFApplication.m			\
        OFArray.m			\
        OFAutoreleasePool.m		\
        OFBlock.m			\
@@ -19,6 +30,7 @@ SRCS = OFApplication.m			\
        OFConstantString.m		\
        OFCountedSet.m			\
        OFData.m				\
+       OFData+ASN1DERValue.m		\
        OFData+CryptoHashing.m		\
        OFData+MessagePackValue.m	\
        OFDate.m				\
@@ -134,7 +146,6 @@ SRCS_SOCKETS = OFDNSResolver.m			\
 	       OFStreamSocket.m			\
 	       OFTCPSocket.m			\
 	       OFUDPSocket.m			\
-	       resolver.m			\
 	       socket.m
 SRCS_THREADS = OFCondition.m		\
 	       OFMutex.m		\
@@ -202,7 +213,6 @@ SRCS_SOCKETS += OFKernelEventObserver.m			\
 		${OFKERNELEVENTOBSERVER_KQUEUE_M}	\
 		${OFKERNELEVENTOBSERVER_POLL_M}		\
 		${OFKERNELEVENTOBSERVER_SELECT_M}	\
-		OFTCPSocket+SOCKS5.m			\
 		OFURLHandler_HTTP.m
 
 OBJS_EXTRA = ${RUNTIME_RUNTIME_A}	\
