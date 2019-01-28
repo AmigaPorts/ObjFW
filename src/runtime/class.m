@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -55,10 +55,17 @@ register_class(struct objc_abi_class *cls)
 bool
 class_registerAlias_np(Class cls, const char *name)
 {
-	if (classes == NULL)
+	objc_global_mutex_lock();
+
+	if (classes == NULL) {
+		objc_global_mutex_unlock();
+
 		return NO;
+	}
 
 	objc_hashtable_set(classes, name, (Class)((uintptr_t)cls | 1));
+
+	objc_global_mutex_unlock();
 
 	return YES;
 }

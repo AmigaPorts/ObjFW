@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -22,6 +22,7 @@
 
 #import "OFRunLoop.h"
 #import "OFRunLoop+Private.h"
+#import "OFData.h"
 #import "OFDictionary.h"
 #ifdef OF_HAVE_SOCKETS
 # import "OFKernelEventObserver.h"
@@ -74,9 +75,7 @@ static OFRunLoop *mainRunLoop = nil;
 @interface OFRunLoop_QueueItem: OFObject
 {
 @public
-	id _target;
-	SEL _selector;
-	id _context;
+	id _delegate;
 }
 
 - (bool)handleObject: (id)object;
@@ -114,19 +113,33 @@ static OFRunLoop *mainRunLoop = nil;
 }
 @end
 
-@interface OFRunLoop_WriteQueueItem: OFRunLoop_QueueItem
+@interface OFRunLoop_WriteDataQueueItem: OFRunLoop_QueueItem
 {
 @public
 # ifdef OF_HAVE_BLOCKS
-	of_stream_async_write_block_t _block;
+	of_stream_async_write_data_block_t _block;
 # endif
-	const void *_buffer;
-	size_t _length, _writtenLength;
+	OFData *_data;
+	size_t _writtenLength;
 }
 @end
 
+@interface OFRunLoop_WriteStringQueueItem: OFRunLoop_QueueItem
+{
+@public
+# ifdef OF_HAVE_BLOCKS
+	of_stream_async_write_string_block_t _block;
+# endif
+	OFString *_string;
+	of_string_encoding_t _encoding;
+	size_t _writtenLength;
+}
+@end
+
+# if !defined(OF_WII) && !defined(OF_NINTENDO_3DS)
 @interface OFRunLoop_ConnectQueueItem: OFRunLoop_QueueItem
 @end
+# endif
 
 @interface OFRunLoop_AcceptQueueItem: OFRunLoop_QueueItem
 {
@@ -152,10 +165,9 @@ static OFRunLoop *mainRunLoop = nil;
 {
 @public
 # ifdef OF_HAVE_BLOCKS
-	of_udp_socket_async_send_block_t _block;
+	of_udp_socket_async_send_data_block_t _block;
 # endif
-	const void *_buffer;
-	size_t _length;
+	OFData *_data;
 	of_socket_address_t _receiver;
 }
 @end
@@ -251,8 +263,7 @@ static OFRunLoop *mainRunLoop = nil;
 	 * Retain the queue so that it doesn't disappear from us because the
 	 * handler called -[cancelAsyncRequests].
 	 */
-	OFList OF_GENERIC(OF_KINDOF(OFRunLoop_WriteQueueItem *)) *queue =
-	    [[_writeQueues objectForKey: object] retain];
+	OFList *queue = [[_writeQueues objectForKey: object] retain];
 
 	assert(queue != nil);
 
@@ -300,8 +311,7 @@ static OFRunLoop *mainRunLoop = nil;
 
 - (void)dealloc
 {
-	[_target release];
-	[_context release];
+	[_delegate release];
 
 	[super dealloc];
 }
@@ -326,12 +336,14 @@ static OFRunLoop *mainRunLoop = nil;
 		return _block(object, _buffer, length, exception);
 	else {
 # endif
-		bool (*func)(id, SEL, OFStream *, void *, size_t, id, id) =
-		    (bool (*)(id, SEL, OFStream *, void *, size_t, id, id))
-		    [_target methodForSelector: _selector];
+		if (![_delegate respondsToSelector:
+		    @selector(stream:didReadIntoBuffer:length:exception:)])
+			return false;
 
-		return func(_target, _selector, object, _buffer, length,
-		    _context, exception);
+		return [_delegate stream: object
+		       didReadIntoBuffer: _buffer
+				  length: length
+			       exception: exception];
 # ifdef OF_HAVE_BLOCKS
 	}
 # endif
@@ -376,12 +388,14 @@ static OFRunLoop *mainRunLoop = nil;
 		return true;
 	} else {
 # endif
-		bool (*func)(id, SEL, OFStream *, void *, size_t, id, id) =
-		    (bool (*)(id, SEL, OFStream *, void *, size_t, id, id))
-		    [_target methodForSelector: _selector];
+		if (![_delegate respondsToSelector:
+		    @selector(stream:didReadIntoBuffer:length:exception:)])
+			return false;
 
-		if (!func(_target, _selector, object, _buffer, _readLength,
-		    _context, exception))
+		if (![_delegate stream: object
+		     didReadIntoBuffer: _buffer
+				length: _readLength
+			     exception: exception])
 			return false;
 
 		_readLength = 0;
@@ -422,12 +436,13 @@ static OFRunLoop *mainRunLoop = nil;
 		return _block(object, line, exception);
 	else {
 # endif
-		bool (*func)(id, SEL, OFStream *, OFString *, id, id) =
-		    (bool (*)(id, SEL, OFStream *, OFString *, id, id))
-		    [_target methodForSelector: _selector];
+		if (![_delegate respondsToSelector:
+		    @selector(stream:didReadLine:exception:)])
+			return false;
 
-		return func(_target, _selector, object, line, _context,
-		    exception);
+		return [_delegate stream: object
+			     didReadLine: line
+			       exception: exception];
 # ifdef OF_HAVE_BLOCKS
 	}
 # endif
@@ -443,15 +458,19 @@ static OFRunLoop *mainRunLoop = nil;
 # endif
 @end
 
-@implementation OFRunLoop_WriteQueueItem
+@implementation OFRunLoop_WriteDataQueueItem
 - (bool)handleObject: (id)object
 {
 	size_t length;
 	id exception = nil;
+	size_t dataLength = [_data count] * [_data itemSize];
+	OFData *newData, *oldData;
 
 	@try {
-		length = [object writeBuffer: (char *)_buffer + _writtenLength
-				      length: _length - _writtenLength];
+		const char *dataItems = [_data items];
+
+		length = [object writeBuffer: dataItems + _writtenLength
+				      length: dataLength - _writtenLength];
 	} @catch (id e) {
 		length = 0;
 		exception = e;
@@ -459,29 +478,39 @@ static OFRunLoop *mainRunLoop = nil;
 
 	_writtenLength += length;
 
-	if (_writtenLength != _length && exception == nil)
+	if (_writtenLength != dataLength && exception == nil)
 		return true;
 
 # ifdef OF_HAVE_BLOCKS
 	if (_block != NULL) {
-		_length = _block(object, &_buffer, _writtenLength, exception);
+		newData = _block(object, _data, _writtenLength, exception);
 
-		if (_length == 0)
+		if (newData == nil)
 			return false;
+
+		oldData = _data;
+		_data = [newData copy];
+		[oldData release];
 
 		_writtenLength = 0;
 		return true;
 	} else {
 # endif
-		bool (*func)(id, SEL, OFStream *, const void *, size_t, id,
-		    id) = (bool (*)(id, SEL, OFStream *, const void *, size_t,
-		    id, id))[_target methodForSelector: _selector];
-
-		_length = func(_target, _selector, object, &_buffer,
-		    _writtenLength, _context, exception);
-
-		if (_length == 0)
+		if (![_delegate respondsToSelector:
+		    @selector(stream:didWriteData:bytesWritten:exception:)])
 			return false;
+
+		newData = [_delegate stream: object
+			       didWriteData: _data
+			       bytesWritten: _writtenLength
+				  exception: exception];
+
+		if (newData == nil)
+			return false;
+
+		oldData = _data;
+		_data = [newData copy];
+		[oldData release];
 
 		_writtenLength = 0;
 		return true;
@@ -490,22 +519,97 @@ static OFRunLoop *mainRunLoop = nil;
 # endif
 }
 
-# ifdef OF_HAVE_BLOCKS
 - (void)dealloc
 {
+	[_data release];
+# ifdef OF_HAVE_BLOCKS
 	[_block release];
+# endif
 
 	[super dealloc];
 }
-# endif
 @end
 
+@implementation OFRunLoop_WriteStringQueueItem
+- (bool)handleObject: (id)object
+{
+	size_t length;
+	id exception = nil;
+	size_t cStringLength = [_string cStringLengthWithEncoding: _encoding];
+	OFString *newString, *oldString;
+
+	@try {
+		const char *cString = [_string cStringWithEncoding: _encoding];
+
+		length = [object writeBuffer: cString + _writtenLength
+				      length: cStringLength - _writtenLength];
+	} @catch (id e) {
+		length = 0;
+		exception = e;
+	}
+
+	_writtenLength += length;
+
+	if (_writtenLength != cStringLength && exception == nil)
+		return true;
+
+# ifdef OF_HAVE_BLOCKS
+	if (_block != NULL) {
+		newString = _block(object, _string, _encoding, _writtenLength,
+		    exception);
+
+		if (newString == nil)
+			return false;
+
+		oldString = _string;
+		_string = [newString copy];
+		[oldString release];
+
+		_writtenLength = 0;
+		return true;
+	} else {
+# endif
+		if (![_delegate respondsToSelector: @selector(stream:
+		    didWriteString:encoding:bytesWritten:exception:)])
+			return false;
+
+		newString = [_delegate stream: object
+			       didWriteString: _string
+				     encoding: _encoding
+				 bytesWritten: _writtenLength
+				    exception: exception];
+
+		if (newString == nil)
+			return false;
+
+		oldString = _string;
+		_string = [newString copy];
+		[oldString release];
+
+		_writtenLength = 0;
+		return true;
+# ifdef OF_HAVE_BLOCKS
+	}
+# endif
+}
+
+- (void)dealloc
+{
+	[_string release];
+# ifdef OF_HAVE_BLOCKS
+	[_block release];
+# endif
+
+	[super dealloc];
+}
+@end
+
+# if !defined(OF_WII) && !defined(OF_NINTENDO_3DS)
 @implementation OFRunLoop_ConnectQueueItem
 - (bool)handleObject: (id)object
 {
 	id exception = nil;
 	int errNo;
-	void (*func)(id, SEL, OFTCPSocket *, id, id);
 
 	if ((errNo = [object of_socketError]) != 0)
 		exception = [OFConnectionFailedException
@@ -514,38 +618,41 @@ static OFRunLoop *mainRunLoop = nil;
 			       socket: object
 				errNo: errNo];
 
-	func = (void (*)(id, SEL, OFTCPSocket *, id, id))
-	    [_target methodForSelector: _selector];
-	func(_target, _selector, object, _context, exception);
+	if ([_delegate respondsToSelector:
+	    @selector(of_socketDidConnect:exception:)])
+		[_delegate of_socketDidConnect: object
+				     exception: exception];
 
 	return false;
 }
 @end
+# endif
 
 @implementation OFRunLoop_AcceptQueueItem
 - (bool)handleObject: (id)object
 {
-	OFTCPSocket *newSocket;
+	OFTCPSocket *acceptedSocket;
 	id exception = nil;
 
 	@try {
-		newSocket = [object accept];
+		acceptedSocket = [object accept];
 	} @catch (id e) {
-		newSocket = nil;
+		acceptedSocket = nil;
 		exception = e;
 	}
 
 # ifdef OF_HAVE_BLOCKS
 	if (_block != NULL)
-		return _block(object, newSocket, exception);
+		return _block(object, acceptedSocket, exception);
 	else {
 # endif
-		bool (*func)(id, SEL, OFTCPSocket *, OFTCPSocket *, id, id) =
-		    (bool (*)(id, SEL, OFTCPSocket *, OFTCPSocket *, id, id))
-		    [_target methodForSelector: _selector];
+		if (![_delegate respondsToSelector:
+		    @selector(socket:didAcceptSocket:exception:)])
+			return false;
 
-		return func(_target, _selector, object, newSocket, _context,
-		    exception);
+		return [_delegate socket: object
+			 didAcceptSocket: acceptedSocket
+			       exception: exception];
 # ifdef OF_HAVE_BLOCKS
 	}
 # endif
@@ -579,17 +686,18 @@ static OFRunLoop *mainRunLoop = nil;
 
 # ifdef OF_HAVE_BLOCKS
 	if (_block != NULL)
-		return _block(object, _buffer, length, address, exception);
+		return _block(object, _buffer, length, &address, exception);
 	else {
 # endif
-		bool (*func)(id, SEL, OFUDPSocket *, void *, size_t,
-		    of_socket_address_t, id, id) =
-		    (bool (*)(id, SEL, OFUDPSocket *, void *, size_t,
-		    of_socket_address_t, id, id))
-		    [_target methodForSelector: _selector];
+		if (![_delegate respondsToSelector: @selector(
+		    socket:didReceiveIntoBuffer:length:sender:exception:)])
+			return false;
 
-		return func(_target, _selector, object, _buffer, length,
-		    address, _context, exception);
+		return [_delegate socket: object
+		    didReceiveIntoBuffer: _buffer
+				  length: length
+				  sender: &address
+			       exception: exception];
 # ifdef OF_HAVE_BLOCKS
 	}
 # endif
@@ -609,10 +717,11 @@ static OFRunLoop *mainRunLoop = nil;
 - (bool)handleObject: (id)object
 {
 	id exception = nil;
+	OFData *newData, *oldData;
 
 	@try {
-		[object sendBuffer: _buffer
-			    length: _length
+		[object sendBuffer: [_data items]
+			    length: [_data count] * [_data itemSize]
 			  receiver: &_receiver];
 	} @catch (id e) {
 		exception = e;
@@ -620,36 +729,49 @@ static OFRunLoop *mainRunLoop = nil;
 
 # ifdef OF_HAVE_BLOCKS
 	if (_block != NULL) {
-		_length = _block(object, &_buffer,
-		    (exception == nil ? _length : 0), &_receiver, exception);
+		newData = _block(object, _data, &_receiver, exception);
 
-		return (_length > 0);
+		if (newData == nil)
+			return false;
+
+		oldData = _data;
+		_data = [newData copy];
+		[oldData release];
+
+		return true;
 	} else {
 # endif
-		size_t (*func)(id, SEL, OFUDPSocket *, const void *, size_t,
-		    of_socket_address_t *, id, id) =
-		    (size_t (*)(id, SEL, OFUDPSocket *, const void *, size_t,
-		    of_socket_address_t *, id, id))
-		    [_target methodForSelector: _selector];
+		if (![_delegate respondsToSelector:
+		    @selector(socket:didSendData:receiver:exception:)])
+			return false;
 
-		_length = func(_target, _selector, object, &_buffer,
-		    (exception == nil ? _length : 0), &_receiver, _context,
-		    exception);
+		newData = [_delegate socket: object
+				didSendData: _data
+				   receiver: &_receiver
+				  exception: exception];
 
-		return (_length > 0);
+		if (newData == nil)
+			return false;
+
+		oldData = _data;
+		_data = [newData copy];
+		[oldData release];
+
+		return true;
 # ifdef OF_HAVE_BLOCKS
 	}
 # endif
 }
 
-# ifdef OF_HAVE_BLOCKS
 - (void)dealloc
 {
+	[_data release];
+# ifdef OF_HAVE_BLOCKS
 	[_block release];
+# endif
 
 	[super dealloc];
 }
-# endif
 @end
 #endif
 
@@ -676,7 +798,7 @@ static OFRunLoop *mainRunLoop = nil;
 }
 
 #ifdef OF_HAVE_SOCKETS
-# define ADD_READ(type, object, mode, code)				\
+# define NEW_READ(type, object, mode)					\
 	void *pool = objc_autoreleasePoolPush();			\
 	OFRunLoop *runLoop = [self currentRunLoop];			\
 	OFRunLoop_State *state = [runLoop of_stateForMode: mode		\
@@ -694,12 +816,8 @@ static OFRunLoop *mainRunLoop = nil;
 		[state->_kernelEventObserver				\
 		    addObjectForReading: object];			\
 									\
-	queueItem = [[[type alloc] init] autorelease];			\
-	code								\
-	[queue appendObject: queueItem];				\
-									\
-	objc_autoreleasePoolPop(pool);
-# define ADD_WRITE(type, object, mode, code)				\
+	queueItem = [[[type alloc] init] autorelease];
+# define NEW_WRITE(type, object, mode)					\
 	void *pool = objc_autoreleasePoolPush();			\
 	OFRunLoop *runLoop = [self currentRunLoop];			\
 	OFRunLoop_State *state = [runLoop of_stateForMode: mode		\
@@ -717,8 +835,8 @@ static OFRunLoop *mainRunLoop = nil;
 		[state->_kernelEventObserver				\
 		    addObjectForWriting: object];			\
 									\
-	queueItem = [[[type alloc] init] autorelease];			\
-	code								\
+	queueItem = [[[type alloc] init] autorelease];
+#define QUEUE_ITEM							\
 	[queue appendObject: queueItem];				\
 									\
 	objc_autoreleasePoolPop(pool);
@@ -728,17 +846,21 @@ static OFRunLoop *mainRunLoop = nil;
 			  buffer: (void *)buffer
 			  length: (size_t)length
 			    mode: (of_run_loop_mode_t)mode
-			  target: (id)target
-			selector: (SEL)selector
-			 context: (id)context
+# ifdef OF_HAVE_BLOCKS
+			   block: (of_stream_async_read_block_t)block
+# endif
+			delegate: (id <OFStreamDelegate>)delegate
 {
-	ADD_READ(OFRunLoop_ReadQueueItem, stream, mode, {
-		queueItem->_target = [target retain];
-		queueItem->_selector = selector;
-		queueItem->_context = [context retain];
-		queueItem->_buffer = buffer;
-		queueItem->_length = length;
-	})
+	NEW_READ(OFRunLoop_ReadQueueItem, stream, mode)
+
+	queueItem->_delegate = [delegate retain];
+# ifdef OF_HAVE_BLOCKS
+	queueItem->_block = [block copy];
+# endif
+	queueItem->_buffer = buffer;
+	queueItem->_length = length;
+
+	QUEUE_ITEM
 }
 
 + (void)of_addAsyncReadForStream: (OFStream <OFReadyForReadingObserving> *)
@@ -746,210 +868,162 @@ static OFRunLoop *mainRunLoop = nil;
 			  buffer: (void *)buffer
 		     exactLength: (size_t)exactLength
 			    mode: (of_run_loop_mode_t)mode
-			  target: (id)target
-			selector: (SEL)selector
-			 context: (id)context
+# ifdef OF_HAVE_BLOCKS
+			   block: (of_stream_async_read_block_t)block
+# endif
+			delegate: (id <OFStreamDelegate>)delegate
 {
-	ADD_READ(OFRunLoop_ExactReadQueueItem, stream, mode, {
-		queueItem->_target = [target retain];
-		queueItem->_selector = selector;
-		queueItem->_context = [context retain];
-		queueItem->_buffer = buffer;
-		queueItem->_exactLength = exactLength;
-	})
+	NEW_READ(OFRunLoop_ExactReadQueueItem, stream, mode)
+
+	queueItem->_delegate = [delegate retain];
+# ifdef OF_HAVE_BLOCKS
+	queueItem->_block = [block copy];
+# endif
+	queueItem->_buffer = buffer;
+	queueItem->_exactLength = exactLength;
+
+	QUEUE_ITEM
 }
 
 + (void)of_addAsyncReadLineForStream: (OFStream <OFReadyForReadingObserving> *)
 					  stream
 			    encoding: (of_string_encoding_t)encoding
 				mode: (of_run_loop_mode_t)mode
-			      target: (id)target
-			    selector: (SEL)selector
-			     context: (id)context
+# ifdef OF_HAVE_BLOCKS
+			       block: (of_stream_async_read_line_block_t)block
+# endif
+			    delegate: (id <OFStreamDelegate>)delegate
 {
-	ADD_READ(OFRunLoop_ReadLineQueueItem, stream, mode, {
-		queueItem->_target = [target retain];
-		queueItem->_selector = selector;
-		queueItem->_context = [context retain];
-		queueItem->_encoding = encoding;
-	})
+	NEW_READ(OFRunLoop_ReadLineQueueItem, stream, mode)
+
+	queueItem->_delegate = [delegate retain];
+# ifdef OF_HAVE_BLOCKS
+	queueItem->_block = [block copy];
+# endif
+	queueItem->_encoding = encoding;
+
+	QUEUE_ITEM
 }
 
 + (void)of_addAsyncWriteForStream: (OFStream <OFReadyForWritingObserving> *)
 				       stream
-			   buffer: (const void *)buffer
-			   length: (size_t)length
+			     data: (OFData *)data
 			     mode: (of_run_loop_mode_t)mode
-			   target: (id)target
-			 selector: (SEL)selector
-			  context: (id)context
+# ifdef OF_HAVE_BLOCKS
+			    block: (of_stream_async_write_data_block_t)block
+# endif
+			 delegate: (id <OFStreamDelegate>)delegate
 {
-	ADD_WRITE(OFRunLoop_WriteQueueItem, stream, mode, {
-		queueItem->_target = [target retain];
-		queueItem->_selector = selector;
-		queueItem->_context = [context retain];
-		queueItem->_buffer = buffer;
-		queueItem->_length = length;
-	})
+	NEW_WRITE(OFRunLoop_WriteDataQueueItem, stream, mode)
+
+	queueItem->_delegate = [delegate retain];
+# ifdef OF_HAVE_BLOCKS
+	queueItem->_block = [block copy];
+# endif
+	queueItem->_data = [data copy];
+
+	QUEUE_ITEM
 }
 
++ (void)of_addAsyncWriteForStream: (OFStream <OFReadyForWritingObserving> *)
+				       stream
+			   string: (OFString *)string
+			 encoding: (of_string_encoding_t)encoding
+			     mode: (of_run_loop_mode_t)mode
+# ifdef OF_HAVE_BLOCKS
+			    block: (of_stream_async_write_string_block_t)block
+# endif
+			 delegate: (id <OFStreamDelegate>)delegate
+{
+	NEW_WRITE(OFRunLoop_WriteStringQueueItem, stream, mode)
+
+	queueItem->_delegate = [delegate retain];
+# ifdef OF_HAVE_BLOCKS
+	queueItem->_block = [block copy];
+# endif
+	queueItem->_string = [string copy];
+	queueItem->_encoding = encoding;
+
+	QUEUE_ITEM
+}
+
+# if !defined(OF_WII) && !defined(OF_NINTENDO_3DS)
 + (void)of_addAsyncConnectForTCPSocket: (OFTCPSocket *)stream
 				  mode: (of_run_loop_mode_t)mode
-				target: (id)target
-			      selector: (SEL)selector
-			       context: (id)context
+			      delegate: (id <OFTCPSocketDelegate_Private>)
+					    delegate
 {
-	ADD_WRITE(OFRunLoop_ConnectQueueItem, stream, mode, {
-		queueItem->_target = [target retain];
-		queueItem->_selector = selector;
-		queueItem->_context = [context retain];
-	})
-}
+	NEW_WRITE(OFRunLoop_ConnectQueueItem, stream, mode)
 
-+ (void)of_addAsyncAcceptForTCPSocket: (OFTCPSocket *)stream
-				 mode: (of_run_loop_mode_t)mode
-			       target: (id)target
-			     selector: (SEL)selector
-			      context: (id)context
-{
-	ADD_READ(OFRunLoop_AcceptQueueItem, stream, mode, {
-		queueItem->_target = [target retain];
-		queueItem->_selector = selector;
-		queueItem->_context = [context retain];
-	})
-}
+	queueItem->_delegate = [delegate retain];
 
-+ (void)of_addAsyncReceiveForUDPSocket: (OFUDPSocket *)sock
-				buffer: (void *)buffer
-				length: (size_t)length
-				  mode: (of_run_loop_mode_t)mode
-				target: (id)target
-			      selector: (SEL)selector
-			       context: (id)context
-{
-	ADD_READ(OFRunLoop_UDPReceiveQueueItem, sock, mode, {
-		queueItem->_target = [target retain];
-		queueItem->_selector = selector;
-		queueItem->_context = [context retain];
-		queueItem->_buffer = buffer;
-		queueItem->_length = length;
-	})
-}
-
-+ (void)of_addAsyncSendForUDPSocket: (OFUDPSocket *)sock
-			     buffer: (const void *)buffer
-			     length: (size_t)length
-			   receiver: (of_socket_address_t)receiver
-			       mode: (of_run_loop_mode_t)mode
-			     target: (id)target
-			   selector: (SEL)selector
-			    context: (id)context
-{
-	ADD_WRITE(OFRunLoop_UDPSendQueueItem, sock, mode, {
-		queueItem->_target = [target retain];
-		queueItem->_selector = selector;
-		queueItem->_context = [context retain];
-		queueItem->_buffer = buffer;
-		queueItem->_length = length;
-		queueItem->_receiver = receiver;
-	})
-}
-
-# ifdef OF_HAVE_BLOCKS
-+ (void)of_addAsyncReadForStream: (OFStream <OFReadyForReadingObserving> *)
-				      stream
-			  buffer: (void *)buffer
-			  length: (size_t)length
-			    mode: (of_run_loop_mode_t)mode
-			   block: (of_stream_async_read_block_t)block
-{
-	ADD_READ(OFRunLoop_ReadQueueItem, stream, mode, {
-		queueItem->_block = [block copy];
-		queueItem->_buffer = buffer;
-		queueItem->_length = length;
-	})
-}
-
-+ (void)of_addAsyncReadForStream: (OFStream <OFReadyForReadingObserving> *)
-				      stream
-			  buffer: (void *)buffer
-		     exactLength: (size_t)exactLength
-			    mode: (of_run_loop_mode_t)mode
-			   block: (of_stream_async_read_block_t)block
-{
-	ADD_READ(OFRunLoop_ExactReadQueueItem, stream, mode, {
-		queueItem->_block = [block copy];
-		queueItem->_buffer = buffer;
-		queueItem->_exactLength = exactLength;
-	})
-}
-
-+ (void)of_addAsyncReadLineForStream: (OFStream <OFReadyForReadingObserving> *)
-					  stream
-			    encoding: (of_string_encoding_t)encoding
-				mode: (of_run_loop_mode_t)mode
-			       block: (of_stream_async_read_line_block_t)block
-{
-	ADD_READ(OFRunLoop_ReadLineQueueItem, stream, mode, {
-		queueItem->_block = [block copy];
-		queueItem->_encoding = encoding;
-	})
-}
-
-+ (void)of_addAsyncWriteForStream: (OFStream <OFReadyForWritingObserving> *)
-				       stream
-			   buffer: (const void *)buffer
-			   length: (size_t)length
-			     mode: (of_run_loop_mode_t)mode
-			    block: (of_stream_async_write_block_t)block
-{
-	ADD_WRITE(OFRunLoop_WriteQueueItem, stream, mode, {
-		queueItem->_block = [block copy];
-		queueItem->_buffer = buffer;
-		queueItem->_length = length;
-	})
-}
-
-+ (void)of_addAsyncAcceptForTCPSocket: (OFTCPSocket *)stream
-				 mode: (of_run_loop_mode_t)mode
-				block: (of_tcp_socket_async_accept_block_t)block
-{
-	ADD_READ(OFRunLoop_AcceptQueueItem, stream, mode, {
-		queueItem->_block = [block copy];
-	})
-}
-
-+ (void)of_addAsyncReceiveForUDPSocket: (OFUDPSocket *)sock
-				buffer: (void *)buffer
-				length: (size_t)length
-				  mode: (of_run_loop_mode_t)mode
-				 block: (of_udp_socket_async_receive_block_t)
-					    block
-{
-	ADD_READ(OFRunLoop_UDPReceiveQueueItem, sock, mode, {
-		queueItem->_block = [block copy];
-		queueItem->_buffer = buffer;
-		queueItem->_length = length;
-	})
-}
-
-+ (void)of_addAsyncSendForUDPSocket: (OFUDPSocket *)sock
-			     buffer: (const void *)buffer
-			     length: (size_t)length
-			   receiver: (of_socket_address_t)receiver
-			       mode: (of_run_loop_mode_t)mode
-			      block: (of_udp_socket_async_send_block_t)block
-{
-	ADD_WRITE(OFRunLoop_UDPSendQueueItem, sock, mode, {
-		queueItem->_block = [block copy];
-		queueItem->_buffer = buffer;
-		queueItem->_length = length;
-		queueItem->_receiver = receiver;
-	})
+	QUEUE_ITEM
 }
 # endif
-# undef ADD_READ
-# undef ADD_WRITE
+
++ (void)of_addAsyncAcceptForTCPSocket: (OFTCPSocket *)stream
+				 mode: (of_run_loop_mode_t)mode
+# ifdef OF_HAVE_BLOCKS
+				block: (of_tcp_socket_async_accept_block_t)block
+# endif
+			     delegate: (id <OFTCPSocketDelegate>)delegate
+{
+	NEW_READ(OFRunLoop_AcceptQueueItem, stream, mode)
+
+	queueItem->_delegate = [delegate retain];
+# ifdef OF_HAVE_BLOCKS
+	queueItem->_block = [block copy];
+# endif
+
+	QUEUE_ITEM
+}
+
++ (void)of_addAsyncReceiveForUDPSocket: (OFUDPSocket *)sock
+				buffer: (void *)buffer
+				length: (size_t)length
+				  mode: (of_run_loop_mode_t)mode
+# ifdef OF_HAVE_BLOCKS
+				 block: (of_udp_socket_async_receive_block_t)
+					    block
+# endif
+			      delegate: (id <OFUDPSocketDelegate>)delegate
+{
+	NEW_READ(OFRunLoop_UDPReceiveQueueItem, sock, mode)
+
+	queueItem->_delegate = [delegate retain];
+# ifdef OF_HAVE_BLOCKS
+	queueItem->_block = [block copy];
+# endif
+	queueItem->_buffer = buffer;
+	queueItem->_length = length;
+
+	QUEUE_ITEM
+}
+
++ (void)of_addAsyncSendForUDPSocket: (OFUDPSocket *)sock
+			       data: (OFData *)data
+			   receiver: (const of_socket_address_t *)receiver
+			       mode: (of_run_loop_mode_t)mode
+# ifdef OF_HAVE_BLOCKS
+			      block: (of_udp_socket_async_send_data_block_t)
+					 block
+# endif
+			   delegate: (id <OFUDPSocketDelegate>)delegate
+{
+	NEW_WRITE(OFRunLoop_UDPSendQueueItem, sock, mode)
+
+	queueItem->_delegate = [delegate retain];
+# ifdef OF_HAVE_BLOCKS
+	queueItem->_block = [block copy];
+# endif
+	queueItem->_data = [data copy];
+	queueItem->_receiver = *receiver;
+
+	QUEUE_ITEM
+}
+# undef NEW_READ
+# undef NEW_WRITE
+# undef QUEUE_ITEM
 
 + (void)of_cancelAsyncRequestsForObject: (id)object
 				   mode: (of_run_loop_mode_t)mode

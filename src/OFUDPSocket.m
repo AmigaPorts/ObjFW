@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -48,6 +48,8 @@
 #import "socket_helpers.h"
 
 @implementation OFUDPSocket
+@synthesize delegate = _delegate;
+
 + (void)initialize
 {
 	if (self != [OFUDPSocket class])
@@ -152,7 +154,7 @@
 #endif
 
 #if defined(OF_WII) || defined(OF_NINTENDO_3DS)
-	if (port != 0) {
+	if (of_socket_address_get_port(address) != 0) {
 #endif
 		if (bind(_socket, &address->sockaddr.sockaddr,
 		    address->length) != 0) {
@@ -327,32 +329,24 @@
 
 - (void)asyncReceiveIntoBuffer: (void *)buffer
 			length: (size_t)length
-			target: (id)target
-		      selector: (SEL)selector
-		       context: (id)context
 {
 	[self asyncReceiveIntoBuffer: buffer
 			      length: length
-			 runLoopMode: of_run_loop_mode_default
-			      target: target
-			    selector: selector
-			     context: context];
+			 runLoopMode: of_run_loop_mode_default];
 }
 
 - (void)asyncReceiveIntoBuffer: (void *)buffer
 			length: (size_t)length
 		   runLoopMode: (of_run_loop_mode_t)runLoopMode
-			target: (id)target
-		      selector: (SEL)selector
-		       context: (id)context
 {
 	[OFRunLoop of_addAsyncReceiveForUDPSocket: self
 					   buffer: buffer
 					   length: length
 					     mode: runLoopMode
-					   target: target
-					 selector: selector
-					  context: context];
+# ifdef OF_HAVE_BLOCKS
+					    block: NULL
+# endif
+					 delegate: _delegate];
 }
 
 #ifdef OF_HAVE_BLOCKS
@@ -375,7 +369,8 @@
 					   buffer: buffer
 					   length: length
 					     mode: runLoopMode
-					    block: block];
+					    block: block
+					 delegate: nil];
 }
 #endif
 
@@ -421,65 +416,50 @@
 							     errNo: 0];
 }
 
-- (void)asyncSendBuffer: (const void *)buffer
-		 length: (size_t)length
-	       receiver: (of_socket_address_t)receiver
-		 target: (id)target
-	       selector: (SEL)selector
-		context: (id)context
+- (void)asyncSendData: (OFData *)data
+	     receiver: (const of_socket_address_t *)receiver
 {
-	[self asyncSendBuffer: buffer
-		       length: length
-		     receiver: receiver
-		  runLoopMode: of_run_loop_mode_default
-		       target: target
-		     selector: selector
-		      context: context];
+	[self asyncSendData: data
+		   receiver: receiver
+		runLoopMode: of_run_loop_mode_default];
 }
 
-- (void)asyncSendBuffer: (const void *)buffer
-		 length: (size_t)length
-	       receiver: (of_socket_address_t)receiver
-	    runLoopMode: (of_run_loop_mode_t)runLoopMode
-		 target: (id)target
-	       selector: (SEL)selector
-		context: (id)context
+- (void)asyncSendData: (OFData *)data
+	     receiver: (const of_socket_address_t *)receiver
+	  runLoopMode: (of_run_loop_mode_t)runLoopMode
 {
 	[OFRunLoop of_addAsyncSendForUDPSocket: self
-					buffer: buffer
-					length: length
+					  data: data
 				      receiver: receiver
 					  mode: runLoopMode
-					target: target
-				      selector: selector
-				       context: context];
+# ifdef OF_HAVE_BLOCKS
+					 block: NULL
+# endif
+				      delegate: _delegate];
 }
 
 #ifdef OF_HAVE_BLOCKS
-- (void)asyncSendBuffer: (const void *)buffer
-		 length: (size_t)length
-	       receiver: (of_socket_address_t)receiver
-		  block: (of_udp_socket_async_send_block_t)block
+- (void)asyncSendData: (OFData *)data
+	     receiver: (const of_socket_address_t *)receiver
+		block: (of_udp_socket_async_send_data_block_t)block
 {
-	[self asyncSendBuffer: buffer
-		       length: length
-		     receiver: receiver
-		  runLoopMode: of_run_loop_mode_default
-			block: block];
+	[self asyncSendData: data
+		   receiver: receiver
+		runLoopMode: of_run_loop_mode_default
+		      block: block];
 }
 
-- (void)asyncSendBuffer: (const void *)buffer
-		 length: (size_t)length
-	       receiver: (of_socket_address_t)receiver
-	    runLoopMode: (of_run_loop_mode_t)runLoopMode
-		  block: (of_udp_socket_async_send_block_t)block
+- (void)asyncSendData: (OFData *)data
+	     receiver: (const of_socket_address_t *)receiver
+	  runLoopMode: (of_run_loop_mode_t)runLoopMode
+		block: (of_udp_socket_async_send_data_block_t)block
 {
 	[OFRunLoop of_addAsyncSendForUDPSocket: self
-					buffer: buffer
-					length: length
+					  data: data
 				      receiver: receiver
 					  mode: runLoopMode
-					 block: block];
+					 block: block
+				      delegate: nil];
 }
 #endif
 

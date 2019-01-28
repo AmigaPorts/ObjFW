@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -27,7 +27,7 @@
 # import "atomic_no_threads.h"
 #elif defined(OF_X86_64_ASM) || defined(OF_X86_ASM)
 # import "atomic_x86.h"
-#elif defined(OF_POWERPC_ASM) && !defined(__APPLE_CC__)
+#elif defined(OF_POWERPC_ASM) && !defined(__APPLE_CC__) && !defined(OF_AIX)
 # import "atomic_powerpc.h"
 #elif defined(OF_HAVE_ATOMIC_BUILTINS)
 # import "atomic_builtins.h"

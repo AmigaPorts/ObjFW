@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -28,7 +28,7 @@ OF_ASSUME_NONNULL_BEGIN
  *
  * @brief A delegate for classes implementing the OFTLSSocket protocol.
  */
-@protocol OFTLSSocketDelegate
+@protocol OFTLSSocketDelegate <OFTCPSocketDelegate>
 @optional
 /*!
  * @brief This callback is called when the TLS socket wants to know if it

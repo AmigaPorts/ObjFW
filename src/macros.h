@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -63,6 +63,11 @@
 # define OF_HAVE_COMPILER_TLS
 # ifdef OF_HAVE_THREADS_H
 #  include <threads.h>
+#  ifdef OF_AIX
+/* AIX has a bug where thread_local is defined to "Thread_local;". */
+#   undef thread_local
+#   define thread_local _Thread_local
+#  endif
 # else
 #  define thread_local _Thread_local
 # endif

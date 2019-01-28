@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -51,13 +51,12 @@
 
 #define REDIRECTS_DEFAULT 10
 
-@interface OFHTTPClientRequestHandler: OFObject
+@interface OFHTTPClientRequestHandler: OFObject <OFTCPSocketDelegate>
 {
 @public
 	OFHTTPClient *_client;
 	OFHTTPRequest *_request;
 	unsigned int _redirects;
-	id _context;
 	bool _firstLine;
 	OFString *_version;
 	int _status;
@@ -66,8 +65,7 @@
 
 - (instancetype)initWithClient: (OFHTTPClient *)client
 		       request: (OFHTTPRequest *)request
-		     redirects: (unsigned int)redirects
-		       context: (id)context;
+		     redirects: (unsigned int)redirects;
 - (void)start;
 - (void)closeAndReconnect;
 @end
@@ -105,8 +103,7 @@
 
 - (instancetype)initWithClient: (OFHTTPClient *)client;
 - (OFHTTPResponse *)performRequest: (OFHTTPRequest *)request
-			 redirects: (unsigned int)redirects
-			   context: (id)context;
+			 redirects: (unsigned int)redirects;
 @end
 
 static OFString *
@@ -256,7 +253,6 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 - (instancetype)initWithClient: (OFHTTPClient *)client
 		       request: (OFHTTPRequest *)request
 		     redirects: (unsigned int)redirects
-		       context: (id)context
 {
 	self = [super init];
 
@@ -264,7 +260,6 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 		_client = [client retain];
 		_request = [request retain];
 		_redirects = redirects;
-		_context = [context retain];
 		_serverHeaders = [[OFMutableDictionary alloc] init];
 	} @catch (id e) {
 		[self release];
@@ -278,7 +273,6 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 {
 	[_client release];
 	[_request release];
-	[_context release];
 	[_version release];
 	[_serverHeaders release];
 
@@ -291,9 +285,8 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 	_client->_inProgress = false;
 
 	[_client->_delegate client: _client
-	     didEncounterException: exception
-			   request: _request
-			   context: _context];
+	      didFailWithException: exception
+			   request: _request];
 }
 
 - (void)createResponseWithSocketOrThrow: (OFTCPSocket *)sock
@@ -349,13 +342,12 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 				relativeToURL: URL];
 
 		if ([_client->_delegate respondsToSelector: @selector(client:
-		    shouldFollowRedirect:statusCode:request:response:context:)])
+		    shouldFollowRedirect:statusCode:request:response:)])
 			follow = [_client->_delegate client: _client
 				       shouldFollowRedirect: newURL
 						 statusCode: _status
 						    request: _request
-						   response: response
-						    context: _context];
+						   response: response];
 		else
 			follow = defaultShouldFollow(
 			    [_request method], _status);
@@ -401,8 +393,7 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 			_client->_inProgress = false;
 
 			[_client asyncPerformRequest: newRequest
-					   redirects: _redirects - 1
-					     context: _context];
+					   redirects: _redirects - 1];
 			return;
 		}
 	}
@@ -415,11 +406,10 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 				response: response];
 
 	[_client->_delegate performSelector: @selector(client:didPerformRequest:
-						 response:context:)
+						 response:)
 				 withObject: _client
 				 withObject: _request
 				 withObject: response
-				 withObject: _context
 				 afterDelay: 0];
 }
 
@@ -472,12 +462,13 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 		[_serverHeaders makeImmutable];
 
 		if ([_client->_delegate respondsToSelector: @selector(client:
-		    didReceiveHeaders:statusCode:request:context:)])
+		    didReceiveHeaders:statusCode:request:)])
 			[_client->_delegate client: _client
 				 didReceiveHeaders: _serverHeaders
 					statusCode: _status
-					   request: _request
-					   context: _context];
+					   request: _request];
+
+		[sock setDelegate: nil];
 
 		[self performSelector: @selector(createResponseWithSocket:)
 			   withObject: sock
@@ -523,9 +514,8 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 	return true;
 }
 
-- (bool)socket: (OFTCPSocket *)sock
+- (bool)stream: (OF_KINDOF(OFStream *))sock
    didReadLine: (OFString *)line
-       context: (id)context
      exception: (id)exception
 {
 	bool ret;
@@ -554,11 +544,11 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 	return ret;
 }
 
--  (size_t)socket: (OFTCPSocket *)sock
-  didWriteRequest: (const void **)request
-	   length: (size_t)length
-	  context: (id)context
-	exception: (id)exception
+- (OFString *)stream: (OF_KINDOF(OFStream *))stream
+      didWriteString: (OFString *)string
+	    encoding: (of_string_encoding_t)encoding
+	bytesWritten: (size_t)bytesWritten
+	   exception: (id)exception
 {
 	if (exception != nil) {
 		if ([exception isKindOfClass: [OFWriteFailedException class]] &&
@@ -566,34 +556,31 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 		    [exception errNo] == EPIPE)) {
 			/* In case a keep-alive connection timed out */
 			[self closeAndReconnect];
-			return 0;
+			return nil;
 		}
 
 		[self raiseException: exception];
-		return 0;
+		return nil;
 	}
 
 	_firstLine = true;
 
 	if ([[_request headers] objectForKey: @"Content-Length"] != nil) {
+		[stream setDelegate: nil];
+
 		OFStream *requestBody = [[[OFHTTPClientRequestBodyStream alloc]
 		    initWithHandler: self
-			     socket: sock] autorelease];
+			     socket: stream] autorelease];
 
 		if ([_client->_delegate respondsToSelector:
-		    @selector(client:wantsRequestBody:request:context:)])
+		    @selector(client:wantsRequestBody:request:)])
 			[_client->_delegate client: _client
 				  wantsRequestBody: requestBody
-					   request: _request
-					   context: _context];
-
+					   request: _request];
 	} else
-		[sock asyncReadLineWithTarget: self
-				     selector: @selector(socket:didReadLine:
-						   context:exception:)
-				      context: nil];
+		[stream asyncReadLine];
 
-	return 0;
+	return nil;
 }
 
 - (void)handleSocket: (OFTCPSocket *)sock
@@ -608,69 +595,34 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 	 */
 
 	@try {
-		OFString *requestString = constructRequestString(_request);
-
-		/*
-		 * Pass requestString as context to retain it so that the
-		 * underlying buffer lives long enough.
-		 */
-		[sock asyncWriteBuffer: [requestString UTF8String]
-				length: [requestString UTF8StringLength]
-				target: self
-			      selector: @selector(socket:didWriteRequest:
-					    length:context:exception:)
-			       context: requestString];
+		[sock asyncWriteString: constructRequestString(_request)];
 	} @catch (id e) {
 		[self raiseException: e];
 		return;
 	}
 }
 
-- (void)socketDidConnect: (OFTCPSocket *)sock
-		 context: (id)context
-	       exception: (id)exception
+-     (void)socket: (OF_KINDOF(OFTCPSocket *))sock
+  didConnectToHost: (OFString *)host
+	      port: (uint16_t)port
+	 exception: (id)exception
 {
+	[(OFTCPSocket *)sock setDelegate: self];
+
 	if (exception != nil) {
 		[self raiseException: exception];
 		return;
 	}
 
 	if ([_client->_delegate respondsToSelector:
-	    @selector(client:didCreateSocket:request:context:)])
+	    @selector(client:didCreateSocket:request:)])
 		[_client->_delegate client: _client
 			   didCreateSocket: sock
-				   request: _request
-				   context: _context];
+				   request: _request];
 
 	[self performSelector: @selector(handleSocket:)
 		   withObject: sock
 		   afterDelay: 0];
-}
-
-- (bool)throwAwayContent: (OFHTTPClientResponse *)response
-		  buffer: (char *)buffer
-		  length: (size_t)length
-		 context: (OFTCPSocket *)sock
-	       exception: (id)exception
-{
-	if (exception != nil) {
-		[self raiseException: exception];
-		return false;
-	}
-
-	if ([response isAtEndOfStream]) {
-		[self freeMemory: buffer];
-
-		[_client->_lastResponse release];
-		_client->_lastResponse = nil;
-
-		[self performSelector: @selector(handleSocket:)
-			   withObject: sock
-			   afterDelay: 0];
-		return false;
-	}
-
-	return true;
 }
 
 - (void)start
@@ -682,7 +634,9 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 	if (_client->_socket != nil && ![_client->_socket isAtEndOfStream] &&
 	    [[_client->_lastURL scheme] isEqual: [URL scheme]] &&
 	    [[_client->_lastURL host] isEqual: [URL host]] &&
-	    [_client->_lastURL port] == [URL port]) {
+	    [_client->_lastURL port] == [URL port] &&
+	    (_client->_lastWasHEAD ||
+	    [_client->_lastResponse isAtEndOfStream])) {
 		/*
 		 * Set _socket to nil, so that in case of an error it won't be
 		 * reused. If everything is successful, we set _socket again
@@ -694,27 +648,14 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 		[_client->_lastURL release];
 		_client->_lastURL = nil;
 
-		if (!_client->_lastWasHEAD &&
-		    ![_client->_lastResponse isAtEndOfStream]) {
-			/* Throw away content that has not been read yet */
-			char *buffer = [self allocMemoryWithSize: 512];
+		[_client->_lastResponse release];
+		_client->_lastResponse = nil;
 
-			[_client->_lastResponse
-			    asyncReadIntoBuffer: buffer
-					 length: 512
-					 target: self
-				       selector: @selector(throwAwayContent:
-						     buffer:length:context:
-						     exception:)
-					context: sock];
-		} else {
-			[_client->_lastResponse release];
-			_client->_lastResponse = nil;
+		[sock setDelegate: self];
 
-			[self performSelector: @selector(handleSocket:)
-				   withObject: sock
-				   afterDelay: 0];
-		}
+		[self performSelector: @selector(handleSocket:)
+			   withObject: sock
+			   afterDelay: 0];
 	} else
 		[self closeAndReconnect];
 }
@@ -745,12 +686,9 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 		if (URLPort != nil)
 			port = [URLPort uInt16Value];
 
+		[sock setDelegate: self];
 		[sock asyncConnectToHost: [URL host]
-				    port: port
-				  target: self
-				selector: @selector(socketDidConnect:context:
-					      exception:)
-				 context: nil];
+				    port: port];
 	} @catch (id e) {
 		[self raiseException: e];
 	}
@@ -856,10 +794,8 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 	if (_toWrite > 0)
 		@throw [OFTruncatedDataException exception];
 
-	[_socket asyncReadLineWithTarget: _handler
-				selector: @selector(socket:didReadLine:context:
-					      exception:)
-				 context: nil];
+	[_socket setDelegate: _handler];
+	[_socket asyncReadLine];
 
 	[_socket release];
 	_socket = nil;
@@ -1095,11 +1031,9 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 
 - (OFHTTPResponse *)performRequest: (OFHTTPRequest *)request
 			 redirects: (unsigned int)redirects
-			   context: (id)context
 {
 	[_client asyncPerformRequest: request
-			   redirects: redirects
-			     context: context];
+			   redirects: redirects];
 
 	[[OFRunLoop currentRunLoop] run];
 
@@ -1109,7 +1043,6 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 -      (void)client: (OFHTTPClient *)client
   didPerformRequest: (OFHTTPRequest *)request
 	   response: (OFHTTPResponse *)response
-	    context: (id)context
 {
 	[[OFRunLoop currentRunLoop] stop];
 
@@ -1118,14 +1051,12 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 
 	[_delegate     client: client
 	    didPerformRequest: request
-		     response: response
-		      context: context];
+		     response: response];
 }
 
--	   (void)client: (OFHTTPClient *)client
-  didEncounterException: (id)exception
-		request: (OFHTTPRequest *)request
-		context: (id)context
+-	  (void)client: (OFHTTPClient *)client
+  didFailWithException: (id)exception
+	       request: (OFHTTPRequest *)request
 {
 	/*
 	 * Restore the delegate - we're giving up, but not reaching the release
@@ -1140,42 +1071,36 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 -    (void)client: (OFHTTPClient *)client
   didCreateSocket: (OF_KINDOF(OFTCPSocket *))sock
 	  request: (OFHTTPRequest *)request
-	  context: (id)context
 {
 	if ([_delegate respondsToSelector:
-	    @selector(client:didCreateSocket:request:context:)])
+	    @selector(client:didCreateSocket:request:)])
 		[_delegate   client: client
 		    didCreateSocket: sock
-			    request: request
-			    context: context];
+			    request: request];
 }
 
 -     (void)client: (OFHTTPClient *)client
   wantsRequestBody: (OFStream *)body
 	   request: (OFHTTPRequest *)request
-	   context: (id)context
 {
 	if ([_delegate respondsToSelector:
-	    @selector(client:wantsRequestBody:request:context:)])
+	    @selector(client:wantsRequestBody:request:)])
 		[_delegate    client: client
 		    wantsRequestBody: body
-			     request: request
-			     context: context];
+			     request: request];
 }
 
 -      (void)client: (OFHTTPClient *)client
   didReceiveHeaders: (OFDictionary OF_GENERIC(OFString *, OFString *) *)headers
 	 statusCode: (int)statusCode
 	    request: (OFHTTPRequest *)request
-	    context: (id)context
 {
 	if ([_delegate respondsToSelector:
-	    @selector(client:didReceiveHeaders:statusCode:request:context:)])
+	    @selector(client:didReceiveHeaders:statusCode:request:)])
 		[_delegate     client: client
 		    didReceiveHeaders: headers
 			   statusCode: statusCode
-			      request: request
-			      context: context];
+			      request: request];
 }
 
 -	  (bool)client: (OFHTTPClient *)client
@@ -1183,16 +1108,14 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 	    statusCode: (int)statusCode
 	       request: (OFHTTPRequest *)request
 	      response: (OFHTTPResponse *)response
-	       context: (id)context
 {
 	if ([_delegate respondsToSelector: @selector(client:
-	    shouldFollowRedirect:statusCode:request:response:context:)])
+	    shouldFollowRedirect:statusCode:request:response:)])
 		return [_delegate client: client
 		    shouldFollowRedirect: URL
 			      statusCode: statusCode
 				 request: request
-				response: response
-				 context: context];
+				response: response];
 	else
 		return defaultShouldFollow([request method], statusCode);
 }
@@ -1217,37 +1140,18 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 - (OFHTTPResponse *)performRequest: (OFHTTPRequest *)request
 {
 	return [self performRequest: request
-			  redirects: REDIRECTS_DEFAULT
-			    context: nil];
+			  redirects: REDIRECTS_DEFAULT];
 }
 
 - (OFHTTPResponse *)performRequest: (OFHTTPRequest *)request
 			 redirects: (unsigned int)redirects
-{
-	return [self performRequest: request
-			  redirects: redirects
-			    context: nil];
-}
-
-- (OFHTTPResponse *)performRequest: (OFHTTPRequest *)request
-			   context: (id)context
-{
-	return [self performRequest: request
-			  redirects: REDIRECTS_DEFAULT
-			    context: context];
-}
-
-- (OFHTTPResponse *)performRequest: (OFHTTPRequest *)request
-			 redirects: (unsigned int)redirects
-			   context: (id)context
 {
 	void *pool = objc_autoreleasePoolPush();
 	OFHTTPClient_SyncPerformer *syncPerformer =
 	    [[[OFHTTPClient_SyncPerformer alloc] initWithClient: self]
 	    autorelease];
 	OFHTTPResponse *response = [syncPerformer performRequest: request
-						       redirects: redirects
-							 context: context];
+						       redirects: redirects];
 
 	[response retain];
 
@@ -1257,16 +1161,13 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 }
 
 - (void)asyncPerformRequest: (OFHTTPRequest *)request
-		    context: (id)context
 {
 	[self asyncPerformRequest: request
-			redirects: REDIRECTS_DEFAULT
-			  context: context];
+			redirects: REDIRECTS_DEFAULT];
 }
 
 - (void)asyncPerformRequest: (OFHTTPRequest *)request
 		  redirects: (unsigned int)redirects
-		    context: (id)context
 {
 	void *pool = objc_autoreleasePoolPush();
 	OFURL *URL = [request URL];
@@ -1284,8 +1185,7 @@ defaultShouldFollow(of_http_request_method_t method, int statusCode)
 	[[[[OFHTTPClientRequestHandler alloc]
 	    initWithClient: self
 		   request: request
-		 redirects: redirects
-		   context: context] autorelease] start];
+		 redirects: redirects] autorelease] start];
 
 	objc_autoreleasePoolPop(pool);
 }

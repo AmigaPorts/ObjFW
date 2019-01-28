@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -53,14 +53,15 @@
 #define MEBIBYTE (1024 * 1024)
 #define KIBIBYTE (1024)
 
-@interface OFHTTP: OFObject <OFApplicationDelegate, OFHTTPClientDelegate>
+@interface OFHTTP: OFObject <OFApplicationDelegate, OFHTTPClientDelegate,
+    OFStreamDelegate>
 {
 	OFArray OF_GENERIC(OFString *) *_URLs;
 	size_t _URLIndex;
 	int _errorCode;
 	OFString *_outputPath, *_currentFileName;
-	bool _continue, _force, _detectFileName, _detectedFileName;
-	bool _quiet, _verbose, _insecure;
+	bool _continue, _force, _detectFileName, _detectFileNameRequest;
+	bool _detectedFileName, _quiet, _verbose, _insecure;
 	OFStream *_body;
 	of_http_request_method_t _method;
 	OFMutableDictionary *_clientHeaders;
@@ -476,6 +477,9 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	[sandbox unveilPath: (outputPath != nil
 				 ? outputPath : OF_PATH_CURRENT_DIRECTORY)
 		permissions: @"wc"];
+	/* In case we use ObjOpenSSL for https later */
+	[sandbox unveilPath: @"/etc/ssl"
+		permissions: @"r"];
 
 	[sandbox setAllowsUnveil: false];
 	[OFApplication activateSandbox: sandbox];
@@ -514,7 +518,6 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 -    (void)client: (OFHTTPClient *)client
   didCreateSocket: (OF_KINDOF(OFTCPSocket *))sock
 	  request: (OFHTTPRequest *)request
-	  context: (id)context
 {
 	if (_insecure && [sock respondsToSelector:
 	    @selector(setCertificateVerificationEnabled:)])
@@ -524,7 +527,6 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 -     (void)client: (OFHTTPClient *)client
   wantsRequestBody: (OFStream *)body
 	   request: (OFHTTPRequest *)request
-	   context: (id)context
 {
 	/* TODO: Do asynchronously and print status */
 	while (![_body isAtEndOfStream]) {
@@ -543,7 +545,6 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	    statusCode: (int)statusCode
 	       request: (OFHTTPRequest *)request
 	      response: (OFHTTPResponse *)response
-	       context: (id)context
 {
 	if (_verbose) {
 		void *pool = objc_autoreleasePoolPush();
@@ -568,10 +569,9 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	return true;
 }
 
--	   (void)client: (OFHTTPClient *)client
-  didEncounterException: (id)e
-		request: (OFHTTPRequest *)request
-		context: (id)context
+-	  (void)client: (OFHTTPClient *)client
+  didFailWithException: (id)e
+	       request: (OFHTTPRequest *)request
 {
 	if ([e isKindOfClass: [OFResolveHostFailedException class]]) {
 		if (!_quiet)
@@ -652,13 +652,12 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		   afterDelay: 0];
 }
 
--      (bool)stream: (OFHTTPResponse *)response
+-      (bool)stream: (OF_KINDOF(OFStream *))response
   didReadIntoBuffer: (void *)buffer
 	     length: (size_t)length
-	    context: (id)context
-	  exception: (OFException *)e
+	  exception: (id)exception
 {
-	if (e != nil) {
+	if (exception != nil) {
 		OFString *URL;
 
 		[_progressBar stop];
@@ -670,15 +669,17 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 			[of_stdout writeString: @"\n  Error!\n"];
 
 		URL = [_URLs objectAtIndex: _URLIndex - 1];
-		[of_stderr writeLine:
-		    OF_LOCALIZED(@"download_failed_exception",
+		[of_stderr writeLine: OF_LOCALIZED(
+		    @"download_failed_exception",
 		    @"%[prog]: Failed to download <%[url]>: %[exception]",
 		    @"prog", [OFApplication programName],
 		    @"url", URL,
-		    @"exception", e)];
+		    @"exception", exception)];
 
 		_errorCode = 1;
-		goto next;
+		[self performSelector: @selector(downloadNextURL)
+			   afterDelay: 0];
+		return false;
 	}
 
 	_received += length;
@@ -701,22 +702,18 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 			    OF_LOCALIZED(@"download_done", @"Done!")];
 		}
 
-		goto next;
+		[self performSelector: @selector(downloadNextURL)
+			   afterDelay: 0];
+		return false;
 	}
 
 	return true;
-
-next:
-	[self performSelector: @selector(downloadNextURL)
-		   afterDelay: 0];
-	return false;
 }
 
 -      (void)client: (OFHTTPClient *)client
   didReceiveHeaders: (OFDictionary OF_GENERIC(OFString *, OFString *) *)headers
 	 statusCode: (int)statusCode
 	    request: (OFHTTPRequest *)request
-	    context: (id)context
 {
 	if (!_quiet) {
 		OFString *lengthString =
@@ -806,9 +803,8 @@ next:
 -      (void)client: (OFHTTPClient *)client
   didPerformRequest: (OFHTTPRequest *)request
 	   response: (OFHTTPResponse *)response
-	    context: (id)context
 {
-	if ([context isEqual: @"detectFileName"]) {
+	if (_detectFileNameRequest) {
 		_currentFileName = [fileNameFromContentDisposition(
 		    [[response headers] objectForKey: @"Content-Disposition"])
 		    copy];
@@ -867,13 +863,9 @@ next:
 	[_currentFileName release];
 	_currentFileName = nil;
 
+	[response setDelegate: self];
 	[response asyncReadIntoBuffer: _buffer
-			       length: [OFSystemInfo pageSize]
-			       target: self
-			     selector: @selector(stream:didReadIntoBuffer:
-					   length:context:exception:)
-			      context: nil];
-
+			       length: [OFSystemInfo pageSize]];
 	return;
 
 next:
@@ -935,8 +927,8 @@ next:
 		[request setHeaders: clientHeaders];
 		[request setMethod: OF_HTTP_REQUEST_METHOD_HEAD];
 
-		[_HTTPClient asyncPerformRequest: request
-					 context: @"detectFileName"];
+		_detectFileNameRequest = true;
+		[_HTTPClient asyncPerformRequest: request];
 		return;
 	}
 
@@ -976,8 +968,8 @@ next:
 	[request setHeaders: clientHeaders];
 	[request setMethod: _method];
 
-	[_HTTPClient asyncPerformRequest: request
-				 context: nil];
+	_detectFileNameRequest = false;
+	[_HTTPClient asyncPerformRequest: request];
 	return;
 
 next:

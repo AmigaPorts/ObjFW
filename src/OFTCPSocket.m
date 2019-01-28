@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -64,24 +64,32 @@ static of_run_loop_mode_t connectRunLoopMode = @"of_tcp_socket_connect_mode";
 static OFString *defaultSOCKS5Host = nil;
 static uint16_t defaultSOCKS5Port = 1080;
 
-@interface OFTCPSocket_AsyncConnectContext: OFObject
+@interface OFTCPSocket_AsyncConnectDelegate: OFObject <OFTCPSocketDelegate,
+    OFTCPSocketDelegate_Private, OFDNSResolverDelegate>
 {
 	OFTCPSocket *_socket;
 	OFString *_host;
 	uint16_t _port;
 	OFString *_SOCKS5Host;
 	uint16_t _SOCKS5Port;
-	id _target;
-	SEL _selector;
-	id _context;
+	id <OFTCPSocketDelegate> _delegate;
 #ifdef OF_HAVE_BLOCKS
 	of_tcp_socket_async_connect_block_t _block;
 #endif
 	id _exception;
 	OFData *_socketAddresses;
 	size_t _socketAddressesIndex;
+	enum {
+		SOCKS5_STATE_SEND_AUTHENTICATION = 1,
+		SOCKS5_STATE_READ_VERSION,
+		SOCKS5_STATE_SEND_REQUEST,
+		SOCKS5_STATE_READ_RESPONSE,
+		SOCKS5_STATE_READ_ADDRESS,
+		SOCKS5_STATE_READ_ADDRESS_LENGTH,
+	} _SOCKS5State;
 	/* Longest read is domain name (max 255 bytes) + port */
 	unsigned char _buffer[257];
+	OFMutableData *_request;
 }
 
 - (instancetype)initWithSocket: (OFTCPSocket *)sock
@@ -89,9 +97,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 			  port: (uint16_t)port
 		    SOCKS5Host: (OFString *)SOCKS5Host
 		    SOCKS5Port: (uint16_t)SOCKS5Port
-			target: (id)target
-		      selector: (SEL)selector
-		       context: (id)context;
+		      delegate: (id <OFTCPSocketDelegate>)delegate;
 #ifdef OF_HAVE_BLOCKS
 - (instancetype)initWithSocket: (OFTCPSocket *)sock
 			  host: (OFString *)host
@@ -101,70 +107,26 @@ static uint16_t defaultSOCKS5Port = 1080;
 			 block: (of_tcp_socket_async_connect_block_t)block;
 #endif
 - (void)didConnect;
-- (void)socketDidConnect: (OFTCPSocket *)sock
-		 context: (id)context
-	       exception: (id)exception;
 - (void)tryNextAddressWithRunLoopMode: (of_run_loop_mode_t)runLoopMode;
--	(void)resolver: (OFDNSResolver *)resolver
-  didResolveDomainName: (OFString *)domainName
-       socketAddresses: (OFData *)socketAddresses
-	       context: (id)context
-	     exception: (id)exception;
 - (void)startWithRunLoopMode: (of_run_loop_mode_t)runLoopMode;
 - (void)sendSOCKS5Request;
--	       (size_t)socket: (OFTCPSocket *)sock
-  didSendSOCKS5Authentication: (const void *)request
-		 bytesWritten: (size_t)bytesWritten
-		      context: (id)context
-		    exception: (id)exception;
--	 (bool)socket: (OFTCPSocket *)sock
-  didReadSOCKSVersion: (unsigned char *)SOCKSVersion
-	       length: (size_t)length
-	      context: (id)context
-	    exception: (id)exception;
--	(size_t)socket: (OFTCPSocket *)sock
-  didSendSOCKS5Request: (const void *)request
-	  bytesWritten: (size_t)bytesWritten
-	       context: (id)context
-	     exception: (id)exception;
--	   (bool)socket: (OFTCPSocket *)sock
-  didReadSOCKS5Response: (unsigned char *)response
-		 length: (size_t)length
-		context: (id)context
-	      exception: (id)exception;
--	  (bool)socket: (OFTCPSocket *)sock
-  didReadSOCKS5Address: (unsigned char *)address
-		length: (size_t)length
-	       context: (id)context
-	     exception: (id)exception;
--		(bool)socket: (OFTCPSocket *)sock
-  didReadSOCKS5AddressLength: (unsigned char *)addressLength
-		      length: (size_t)length
-		     context: (id)context
-		   exception: (id)exception;
 @end
 
-@interface OFTCPSocket_ConnectContext: OFObject
+@interface OFTCPSocket_ConnectDelegate: OFObject <OFTCPSocketDelegate>
 {
 @public
 	bool _done;
 	id _exception;
 }
-
-- (void)socketDidConnect: (OFTCPSocket *)sock
-		 context: (id)context
-	       exception: (id)exception;
 @end
 
-@implementation OFTCPSocket_AsyncConnectContext
+@implementation OFTCPSocket_AsyncConnectDelegate
 - (instancetype)initWithSocket: (OFTCPSocket *)sock
 			  host: (OFString *)host
 			  port: (uint16_t)port
 		    SOCKS5Host: (OFString *)SOCKS5Host
 		    SOCKS5Port: (uint16_t)SOCKS5Port
-			target: (id)target
-		      selector: (SEL)selector
-		       context: (id)context
+		      delegate: (id <OFTCPSocketDelegate>)delegate
 {
 	self = [super init];
 
@@ -174,9 +136,9 @@ static uint16_t defaultSOCKS5Port = 1080;
 		_port = port;
 		_SOCKS5Host = [SOCKS5Host copy];
 		_SOCKS5Port = SOCKS5Port;
-		_target = [target retain];
-		_selector = selector;
-		_context = [context retain];
+		_delegate = [delegate retain];
+
+		[_socket setDelegate: self];
 	} @catch (id e) {
 		[self release];
 		@throw e;
@@ -213,16 +175,22 @@ static uint16_t defaultSOCKS5Port = 1080;
 
 - (void)dealloc
 {
+#ifdef OF_HAVE_BLOCKS
+	if (_block != NULL)
+#endif
+		if ([_socket delegate] == self)
+			[_socket setDelegate: _delegate];
+
 	[_socket release];
 	[_host release];
 	[_SOCKS5Host release];
-	[_target release];
-	[_context release];
+	[_delegate release];
 #ifdef OF_HAVE_BLOCKS
 	[_block release];
 #endif
 	[_exception release];
 	[_socketAddresses release];
+	[_request release];
 
 	[super dealloc];
 }
@@ -237,19 +205,21 @@ static uint16_t defaultSOCKS5Port = 1080;
 		_block(_socket, _exception);
 	else {
 #endif
-		void (*func)(id, SEL, OFTCPSocket *, id, id) =
-		    (void (*)(id, SEL, OFTCPSocket *, id, id))
-		    [_target methodForSelector: _selector];
+		[_socket setDelegate: _delegate];
 
-		func(_target, _selector, _socket, _context, _exception);
+		if ([_delegate respondsToSelector:
+		    @selector(socket:didConnectToHost:port:exception:)])
+			[_delegate    socket: _socket
+			    didConnectToHost: _host
+					port: _port
+				   exception: _exception];
 #ifdef OF_HAVE_BLOCKS
 	}
 #endif
 }
 
-- (void)socketDidConnect: (OFTCPSocket *)sock
-		 context: (id)context
-	       exception: (id)exception
+- (void)of_socketDidConnect: (OF_KINDOF(OFTCPSocket *))sock
+		  exception: (id)exception
 {
 	if (exception != nil) {
 		if (_socketAddressesIndex >= [_socketAddresses count]) {
@@ -296,21 +266,32 @@ static uint16_t defaultSOCKS5Port = 1080;
 		return;
 	}
 
+#if defined(OF_NINTENDO_3DS) || defined(OF_WII)
+	/*
+	 * On Wii and 3DS, connect() fails if non-blocking is enabled.
+	 *
+	 * Additionally, on Wii, there is no getsockopt(), so it would not be
+	 * possible to get the error (or success) after connecting anyway.
+	 *
+	 * So for now, connecting is blocking on Wii and 3DS.
+	 *
+	 * FIXME: Use a different thread as a work around.
+	 */
+	[_socket setBlocking: true];
+#else
 	[_socket setBlocking: false];
+#endif
 
 	if (![_socket of_connectSocketToAddress: &address
 					  errNo: &errNo]) {
+#if !defined(OF_NINTENDO_3DS) && !defined(OF_WII)
 		if (errNo == EINPROGRESS) {
-			SEL selector = @selector(socketDidConnect:context:
-			    exception:);
-
 			[OFRunLoop of_addAsyncConnectForTCPSocket: _socket
 							     mode: runLoopMode
-							   target: self
-							 selector: selector
-							  context: nil];
+							 delegate: self];
 			return;
 		} else {
+#endif
 			[_socket of_closeSocket];
 
 			if (_socketAddressesIndex >= [_socketAddresses count]) {
@@ -325,8 +306,14 @@ static uint16_t defaultSOCKS5Port = 1080;
 
 			[self tryNextAddressWithRunLoopMode: runLoopMode];
 			return;
+#if !defined(OF_NINTENDO_3DS) && !defined(OF_WII)
 		}
+#endif
 	}
+
+#if defined(OF_NINTENDO_3DS) || defined(OF_WII)
+	[_socket setBlocking: false];
+#endif
 
 	[self didConnect];
 }
@@ -334,7 +321,6 @@ static uint16_t defaultSOCKS5Port = 1080;
 -	(void)resolver: (OFDNSResolver *)resolver
   didResolveDomainName: (OFString *)domainName
        socketAddresses: (OFData *)socketAddresses
-	       context: (id)context
 	     exception: (id)exception
 {
 	if (exception != nil) {
@@ -383,268 +369,211 @@ static uint16_t defaultSOCKS5Port = 1080;
 	    asyncResolveSocketAddressesForHost: host
 				 addressFamily: OF_SOCKET_ADDRESS_FAMILY_ANY
 				   runLoopMode: runLoopMode
-					target: self
-				      selector: @selector(resolver:
-						    didResolveDomainName:
-						    socketAddresses:context:
-						    exception:)
-				       context: nil];
+				      delegate: self];
 }
 
 - (void)sendSOCKS5Request
 {
-	[_socket asyncWriteBuffer: "\x05\x01\x00"
-			   length: 3
-		      runLoopMode: [[OFRunLoop currentRunLoop] currentMode]
-			   target: self
-			 selector: @selector(socket:didSendSOCKS5Authentication:
-				       bytesWritten:context:exception:)
-			  context: nil];
+	OFData *data = [OFData dataWithItems: "\x05\x01\x00"
+				       count: 3];
+
+	_SOCKS5State = SOCKS5_STATE_SEND_AUTHENTICATION;
+	[_socket asyncWriteData: data
+		    runLoopMode: [[OFRunLoop currentRunLoop] currentMode]];
 }
 
--	       (size_t)socket: (OFTCPSocket *)sock
-  didSendSOCKS5Authentication: (const void *)request
-		 bytesWritten: (size_t)bytesWritten
-		      context: (id)context
-		    exception: (id)exception
-{
-	if (exception != nil) {
-		_exception = [exception retain];
-		[self didConnect];
-		return 0;
-	}
-
-	[_socket asyncReadIntoBuffer: _buffer
-			 exactLength: 2
-			 runLoopMode: [[OFRunLoop currentRunLoop] currentMode]
-			      target: self
-			    selector: @selector(socket:didReadSOCKSVersion:
-					  length:context:exception:)
-			     context: nil];
-
-	return 0;
-}
-
--	 (bool)socket: (OFTCPSocket *)sock
-  didReadSOCKSVersion: (unsigned char *)SOCKSVersion
-	       length: (size_t)length
-	      context: (id)context
-	    exception: (id)exception
-{
-	OFMutableData *request;
-	uint8_t hostLength;
-	unsigned char port[2];
-
-	if (exception != nil) {
-		_exception = [exception retain];
-		[self didConnect];
-		return false;
-	}
-
-	if (SOCKSVersion[0] != 5 || SOCKSVersion[1] != 0) {
-		_exception = [[OFConnectionFailedException alloc]
-		    initWithHost: _host
-			    port: _port
-			  socket: self
-			   errNo: EPROTONOSUPPORT];
-		[self didConnect];
-		return false;
-	}
-
-	request = [OFMutableData data];
-	[request addItems: "\x05\x01\x00\x03"
-		    count: 4];
-
-	hostLength = (uint8_t)[_host UTF8StringLength];
-	[request addItem: &hostLength];
-	[request addItems: [_host UTF8String]
-		    count: hostLength];
-
-	port[0] = _port >> 8;
-	port[1] = _port & 0xFF;
-	[request addItems: port
-		    count: 2];
-
-	/* Use request as context to retain it */
-	[_socket asyncWriteBuffer: [request items]
-			   length: [request count]
-		      runLoopMode: [[OFRunLoop currentRunLoop] currentMode]
-			   target: self
-			 selector: @selector(socket:didSendSOCKS5Request:
-				       bytesWritten:context:exception:)
-			  context: request];
-
-	return false;
-}
-
--	(size_t)socket: (OFTCPSocket *)sock
-  didSendSOCKS5Request: (const void *)request
-	  bytesWritten: (size_t)bytesWritten
-	       context: (id)context
-	     exception: (id)exception
-{
-	if (exception != nil) {
-		_exception = [exception retain];
-		[self didConnect];
-		return 0;
-	}
-
-	[_socket asyncReadIntoBuffer: _buffer
-			 exactLength: 4
-			 runLoopMode: [[OFRunLoop currentRunLoop] currentMode]
-			      target: self
-			    selector: @selector(socket:didReadSOCKS5Response:
-					  length:context:exception:)
-			     context: nil];
-
-	return 0;
-}
-
--	   (bool)socket: (OFTCPSocket *)sock
-  didReadSOCKS5Response: (unsigned char *)response
-		 length: (size_t)length
-		context: (id)context
-	      exception: (id)exception
+-      (bool)stream: (OF_KINDOF(OFStream *))sock
+  didReadIntoBuffer: (void *)buffer
+	     length: (size_t)length
+	  exception: (id)exception
 {
 	of_run_loop_mode_t runLoopMode;
+	unsigned char *SOCKSVersion;
+	uint8_t hostLength;
+	unsigned char port[2];
+	unsigned char *response, *addressLength;
 
 	if (exception != nil) {
 		_exception = [exception retain];
-		[self didConnect];
-		return false;
-	}
-
-	if (response[0] != 5 || response[2] != 0) {
-		_exception = [[OFConnectionFailedException alloc]
-		    initWithHost: _host
-			    port: _port
-			  socket: self
-			   errNo: EPROTONOSUPPORT];
-		[self didConnect];
-		return false;
-	}
-
-	if (response[1] != 0) {
-		int errNo;
-
-		switch (response[1]) {
-		case 0x02:
-			errNo = EACCES;
-			break;
-		case 0x03:
-			errNo = ENETUNREACH;
-			break;
-		case 0x04:
-			errNo = EHOSTUNREACH;
-			break;
-		case 0x05:
-			errNo = ECONNREFUSED;
-			break;
-		case 0x06:
-			errNo = ETIMEDOUT;
-			break;
-		case 0x07:
-			errNo = EPROTONOSUPPORT;
-			break;
-		case 0x08:
-			errNo = EAFNOSUPPORT;
-			break;
-		default:
-			errNo = EPROTO;
-			break;
-		}
-
-		_exception = [[OFConnectionFailedException alloc]
-		    initWithHost: _host
-			    port: _port
-			  socket: _socket
-			   errNo: errNo];
 		[self didConnect];
 		return false;
 	}
 
 	runLoopMode = [[OFRunLoop currentRunLoop] currentMode];
 
-	/* Skip the rest of the response */
-	switch (response[3]) {
-	case 1: /* IPv4 */
-		[_socket asyncReadIntoBuffer: _buffer
-				 exactLength: 4 + 2
-				 runLoopMode: runLoopMode
-				      target: self
-				    selector: @selector(socket:
-						  didReadSOCKS5Address:length:
-						  context:exception:)
-				     context: nil];
+	switch (_SOCKS5State) {
+	case SOCKS5_STATE_READ_VERSION:
+		SOCKSVersion = buffer;
+
+		if (SOCKSVersion[0] != 5 || SOCKSVersion[1] != 0) {
+			_exception = [[OFConnectionFailedException alloc]
+			    initWithHost: _host
+				    port: _port
+				  socket: self
+				   errNo: EPROTONOSUPPORT];
+			[self didConnect];
+			return false;
+		}
+
+		[_request release];
+		_request = [[OFMutableData alloc] init];
+
+		[_request addItems: "\x05\x01\x00\x03"
+			     count: 4];
+
+		hostLength = (uint8_t)[_host UTF8StringLength];
+		[_request addItem: &hostLength];
+		[_request addItems: [_host UTF8String]
+			     count: hostLength];
+
+		port[0] = _port >> 8;
+		port[1] = _port & 0xFF;
+		[_request addItems: port
+			    count: 2];
+
+		_SOCKS5State = SOCKS5_STATE_SEND_REQUEST;
+		[_socket asyncWriteData: _request
+			    runLoopMode: runLoopMode];
 		return false;
-	case 3: /* Domain name */
-		[_socket asyncReadIntoBuffer: _buffer
-				 exactLength: 1
-				 runLoopMode: runLoopMode
-				      target: self
-				    selector: @selector(socket:
-						  didReadSOCKS5AddressLength:
-						  length:context:exception:)
-				     context: nil];
+	case SOCKS5_STATE_READ_RESPONSE:
+		response = buffer;
+
+		if (response[0] != 5 || response[2] != 0) {
+			_exception = [[OFConnectionFailedException alloc]
+			    initWithHost: _host
+				    port: _port
+				  socket: self
+				   errNo: EPROTONOSUPPORT];
+			[self didConnect];
+			return false;
+		}
+
+		if (response[1] != 0) {
+			int errNo;
+
+			switch (response[1]) {
+			case 0x02:
+				errNo = EACCES;
+				break;
+			case 0x03:
+				errNo = ENETUNREACH;
+				break;
+			case 0x04:
+				errNo = EHOSTUNREACH;
+				break;
+			case 0x05:
+				errNo = ECONNREFUSED;
+				break;
+			case 0x06:
+				errNo = ETIMEDOUT;
+				break;
+			case 0x07:
+				errNo = EPROTONOSUPPORT;
+				break;
+			case 0x08:
+				errNo = EAFNOSUPPORT;
+				break;
+			default:
+				errNo = EPROTO;
+				break;
+			}
+
+			_exception = [[OFConnectionFailedException alloc]
+			    initWithHost: _host
+				    port: _port
+				  socket: _socket
+				   errNo: errNo];
+			[self didConnect];
+			return false;
+		}
+
+		/* Skip the rest of the response */
+		switch (response[3]) {
+		case 1: /* IPv4 */
+			_SOCKS5State = SOCKS5_STATE_READ_ADDRESS;
+			[_socket asyncReadIntoBuffer: _buffer
+					 exactLength: 4 + 2
+					 runLoopMode: runLoopMode];
+			return false;
+		case 3: /* Domain name */
+			_SOCKS5State = SOCKS5_STATE_READ_ADDRESS_LENGTH;
+			[_socket asyncReadIntoBuffer: _buffer
+					 exactLength: 1
+					 runLoopMode: runLoopMode];
+			return false;
+		case 4: /* IPv6 */
+			_SOCKS5State = SOCKS5_STATE_READ_ADDRESS;
+			[_socket asyncReadIntoBuffer: _buffer
+					 exactLength: 16 + 2
+					 runLoopMode: runLoopMode];
+			return false;
+		default:
+			_exception = [[OFConnectionFailedException alloc]
+			    initWithHost: _host
+				    port: _port
+				  socket: self
+				   errNo: EPROTONOSUPPORT];
+			[self didConnect];
+			return false;
+		}
+
 		return false;
-	case 4: /* IPv6 */
-		[_socket asyncReadIntoBuffer: _buffer
-				 exactLength: 16 + 2
-				 runLoopMode: runLoopMode
-				      target: self
-				    selector: @selector(socket:
-						  didReadSOCKS5Address:length:
-						  context:exception:)
-				     context: nil];
-		return false;
-	default:
-		_exception = [[OFConnectionFailedException alloc]
-		    initWithHost: _host
-			    port: _port
-			  socket: self
-			   errNo: EPROTONOSUPPORT];
+	case SOCKS5_STATE_READ_ADDRESS:
 		[self didConnect];
 		return false;
+	case SOCKS5_STATE_READ_ADDRESS_LENGTH:
+		addressLength = buffer;
+
+		_SOCKS5State = SOCKS5_STATE_READ_ADDRESS;
+		[_socket asyncReadIntoBuffer: _buffer
+				 exactLength: addressLength[0] + 2
+				 runLoopMode: runLoopMode];
+		return false;
+	default:
+		assert(0);
+		return false;
 	}
-
-	return false;
 }
 
--	  (bool)socket: (OFTCPSocket *)sock
-  didReadSOCKS5Address: (unsigned char *)address
-		length: (size_t)length
-	       context: (id)context
-	     exception: (id)exception
+- (OFData *)stream: (OF_KINDOF(OFStream *))sock
+      didWriteData: (OFData *)data
+      bytesWritten: (size_t)bytesWritten
+	 exception: (id)exception
 {
-	_exception = [exception retain];
-	[self didConnect];
-	return false;
-}
+	of_run_loop_mode_t runLoopMode;
 
--		(bool)socket: (OFTCPSocket *)sock
-  didReadSOCKS5AddressLength: (unsigned char *)addressLength
-		      length: (size_t)length
-		     context: (id)context
-		   exception: (id)exception
-{
 	if (exception != nil) {
 		_exception = [exception retain];
 		[self didConnect];
-		return false;
+		return nil;
 	}
 
-	[_socket asyncReadIntoBuffer: _buffer
-			 exactLength: addressLength[0] + 2
-			 runLoopMode: [[OFRunLoop currentRunLoop] currentMode]
-			      target: self
-			    selector: @selector(socket:didReadSOCKS5Address:
-					  length:context:exception:)
-			     context: nil];
-	return false;
+	runLoopMode = [[OFRunLoop currentRunLoop] currentMode];
+
+	switch (_SOCKS5State) {
+	case SOCKS5_STATE_SEND_AUTHENTICATION:
+		_SOCKS5State = SOCKS5_STATE_READ_VERSION;
+		[_socket asyncReadIntoBuffer: _buffer
+				 exactLength: 2
+				 runLoopMode: runLoopMode];
+		return nil;
+	case SOCKS5_STATE_SEND_REQUEST:
+		[_request release];
+		_request = nil;
+
+		_SOCKS5State = SOCKS5_STATE_READ_RESPONSE;
+		[_socket asyncReadIntoBuffer: _buffer
+				 exactLength: 4
+				 runLoopMode: runLoopMode];
+		return nil;
+	default:
+		assert(0);
+		return nil;
+	}
 }
 @end
 
-@implementation OFTCPSocket_ConnectContext
+@implementation OFTCPSocket_ConnectDelegate
 - (void)dealloc
 {
 	[_exception release];
@@ -652,17 +581,19 @@ static uint16_t defaultSOCKS5Port = 1080;
 	[super dealloc];
 }
 
-- (void)socketDidConnect: (OFTCPSocket *)sock
-		 context: (id)context
-	       exception: (id)exception
+-     (void)socket: (OF_KINDOF(OFTCPSocket *))sock
+  didConnectToHost: (OFString *)host
+	      port: (uint16_t)port
+	 exception: (id)exception
 {
-	_exception = [exception retain];
 	_done = true;
+	_exception = [exception retain];
 }
 @end
 
 @implementation OFTCPSocket
 @synthesize SOCKS5Host = _SOCKS5Host, SOCKS5Port = _SOCKS5Port;
+@dynamic delegate;
 
 + (void)setSOCKS5Host: (OFString *)host
 {
@@ -754,6 +685,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 	_socket = INVALID_SOCKET;
 }
 
+#ifndef OF_WII
 - (int)of_socketError
 {
 	int errNo;
@@ -765,23 +697,23 @@ static uint16_t defaultSOCKS5Port = 1080;
 
 	return errNo;
 }
+#endif
 
 - (void)connectToHost: (OFString *)host
 		 port: (uint16_t)port
 {
 	void *pool = objc_autoreleasePoolPush();
-	OFTCPSocket_ConnectContext *context =
-	    [[[OFTCPSocket_ConnectContext alloc] init] autorelease];
+	id <OFTCPSocketDelegate> delegate = [_delegate retain];
+	OFTCPSocket_ConnectDelegate *connectDelegate =
+	    [[[OFTCPSocket_ConnectDelegate alloc] init] autorelease];
 	OFRunLoop *runLoop = [OFRunLoop currentRunLoop];
 
+	[self setDelegate: connectDelegate];
 	[self asyncConnectToHost: host
 			    port: port
-		     runLoopMode: connectRunLoopMode
-			  target: context
-			selector: @selector(socketDidConnect:context:exception:)
-			 context: nil];
+		     runLoopMode: connectRunLoopMode];
 
-	while (!context->_done)
+	while (!connectDelegate->_done)
 		[runLoop runMode: connectRunLoopMode
 		      beforeDate: nil];
 
@@ -789,44 +721,35 @@ static uint16_t defaultSOCKS5Port = 1080;
 	[runLoop runMode: connectRunLoopMode
 	      beforeDate: [OFDate date]];
 
-	if (context->_exception != nil)
-		@throw context->_exception;
+	if (connectDelegate->_exception != nil)
+		@throw connectDelegate->_exception;
+
+	[self setDelegate: delegate];
 
 	objc_autoreleasePoolPop(pool);
 }
 
 - (void)asyncConnectToHost: (OFString *)host
 		      port: (uint16_t)port
-		    target: (id)target
-		  selector: (SEL)selector
-		   context: (id)context
 {
 	[self asyncConnectToHost: host
 			    port: port
-		     runLoopMode: of_run_loop_mode_default
-			  target: target
-			selector: selector
-			 context: context];
+		     runLoopMode: of_run_loop_mode_default];
 }
 
 - (void)asyncConnectToHost: (OFString *)host
 		      port: (uint16_t)port
 	       runLoopMode: (of_run_loop_mode_t)runLoopMode
-		    target: (id)target
-		  selector: (SEL)selector
-		   context: (id)context
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	[[[[OFTCPSocket_AsyncConnectContext alloc]
-	    initWithSocket: self
-		      host: host
-		      port: port
-		SOCKS5Host: _SOCKS5Host
-		SOCKS5Port: _SOCKS5Port
-		    target: target
-		  selector: selector
-		   context: context] autorelease]
+	[[[[OFTCPSocket_AsyncConnectDelegate alloc]
+		  initWithSocket: self
+			    host: host
+			    port: port
+		      SOCKS5Host: _SOCKS5Host
+		      SOCKS5Port: _SOCKS5Port
+			delegate: _delegate] autorelease]
 	    startWithRunLoopMode: runLoopMode];
 
 	objc_autoreleasePoolPop(pool);
@@ -850,13 +773,13 @@ static uint16_t defaultSOCKS5Port = 1080;
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	[[[[OFTCPSocket_AsyncConnectContext alloc]
-	    initWithSocket: self
-		      host: host
-		      port: port
-		SOCKS5Host: _SOCKS5Host
-		SOCKS5Port: _SOCKS5Port
-		     block: block] autorelease]
+	[[[[OFTCPSocket_AsyncConnectDelegate alloc]
+		  initWithSocket: self
+			    host: host
+			    port: port
+		      SOCKS5Host: _SOCKS5Host
+		      SOCKS5Port: _SOCKS5Port
+			   block: block] autorelease]
 	    startWithRunLoopMode: runLoopMode];
 
 	objc_autoreleasePoolPop(pool);
@@ -1082,26 +1005,19 @@ static uint16_t defaultSOCKS5Port = 1080;
 	return client;
 }
 
-- (void)asyncAcceptWithTarget: (id)target
-		     selector: (SEL)selector
-		      context: (id)context
+- (void)asyncAccept
 {
-	[self asyncAcceptWithRunLoopMode: of_run_loop_mode_default
-				  target: target
-				selector: selector
-				 context: context];
+	[self asyncAcceptWithRunLoopMode: of_run_loop_mode_default];
 }
 
 - (void)asyncAcceptWithRunLoopMode: (of_run_loop_mode_t)runLoopMode
-			    target: (id)target
-			  selector: (SEL)selector
-			   context: (id)context
 {
 	[OFRunLoop of_addAsyncAcceptForTCPSocket: self
 					    mode: runLoopMode
-					  target: target
-					selector: selector
-					 context: context];
+# ifdef OF_HAVE_BLOCKS
+					   block: NULL
+# endif
+					delegate: _delegate];
 }
 
 #ifdef OF_HAVE_BLOCKS
@@ -1116,7 +1032,8 @@ static uint16_t defaultSOCKS5Port = 1080;
 {
 	[OFRunLoop of_addAsyncAcceptForTCPSocket: self
 					    mode: runLoopMode
-					   block: block];
+					   block: block
+					delegate: nil];
 }
 #endif
 

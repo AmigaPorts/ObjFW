@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -34,7 +34,7 @@ setPermissions(OFString *destination, OFString *source)
 	OFFileManager *fileManager = [OFFileManager defaultManager];
 	of_file_attributes_t attributes =
 	    [fileManager attributesOfItemAtPath: source];
-	of_file_attribute_key_t key = of_file_attribute_key_size;
+	of_file_attribute_key_t key = of_file_attribute_key_posix_permissions;
 	of_file_attributes_t destinationAttributes = [OFDictionary
 	    dictionaryWithObject: [attributes objectForKey: key]
 			  forKey: key];

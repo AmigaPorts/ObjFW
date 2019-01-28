@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -20,7 +20,9 @@
 OF_ASSUME_NONNULL_BEGIN
 
 @interface OFTCPSocket ()
+#ifndef OF_WII
 @property (readonly, nonatomic) int of_socketError;
+#endif
 
 - (bool)of_createSocketForAddress: (const of_socket_address_t *)address
 			    errNo: (int *)errNo;

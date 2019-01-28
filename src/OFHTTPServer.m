@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -50,11 +50,7 @@
  * FIXME: Errors are not reported to the user.
  */
 
-@interface OFHTTPServer ()
-- (bool)of_socket: (OF_KINDOF(OFTCPSocket *))sock
-  didAcceptSocket: (OF_KINDOF(OFTCPSocket *))clientSocket
-	  context: (id)context
-	exception: (id)exception;
+@interface OFHTTPServer () <OFTCPSocketDelegate>
 @end
 
 @interface OFHTTPServerResponse: OFHTTPResponse <OFReadyForWritingObserving>
@@ -70,7 +66,7 @@
 		       request: (OFHTTPRequest *)request;
 @end
 
-@interface OFHTTPServer_Connection: OFObject
+@interface OFHTTPServer_Connection: OFObject <OFTCPSocketDelegate>
 {
 @public
 	OF_KINDOF(OFTCPSocket *) _socket;
@@ -92,10 +88,6 @@
 
 - (instancetype)initWithSocket: (OF_KINDOF(OFTCPSocket *))sock
 			server: (OFHTTPServer *)server;
-- (bool)socket: (OF_KINDOF(OFTCPSocket *))sock
-   didReadLine: (OFString *)line
-       context: (id)context
-     exception: (id)exception;
 - (bool)parseProlog: (OFString *)line;
 - (bool)parseHeaders: (OFString *)line;
 - (bool)sendErrorAndClose: (short)statusCode;
@@ -409,9 +401,8 @@ normalizedKey(OFString *key)
 	[super dealloc];
 }
 
-- (bool)socket: (OF_KINDOF(OFTCPSocket *))sock
+- (bool)stream: (OF_KINDOF(OFStream *))sock
    didReadLine: (OFString *)line
-       context: (id)context
      exception: (id)exception
 {
 	if (line == nil || exception != nil)
@@ -786,11 +777,8 @@ normalizedKey(OFString *key)
 					port: _port];
 	[_listeningSocket listen];
 
-	[_listeningSocket asyncAcceptWithTarget: self
-				       selector: @selector(of_socket:
-						     didAcceptSocket:context:
-						     exception:)
-					context: nil];
+	[(OFTCPSocket *)_listeningSocket setDelegate: self];
+	[_listeningSocket asyncAccept];
 }
 
 - (void)stop
@@ -800,30 +788,27 @@ normalizedKey(OFString *key)
 	_listeningSocket = nil;
 }
 
-- (bool)of_socket: (OF_KINDOF(OFTCPSocket *))sock
-  didAcceptSocket: (OF_KINDOF(OFTCPSocket *))clientSocket
-	  context: (id)context
+-    (bool)socket: (OF_KINDOF(OFTCPSocket *))sock
+  didAcceptSocket: (OF_KINDOF(OFTCPSocket *))acceptedSocket
 	exception: (id)exception
 {
 	OFHTTPServer_Connection *connection;
 
 	if (exception != nil) {
-		if ([_delegate respondsToSelector:
+		if (![_delegate respondsToSelector:
 		    @selector(server:didReceiveExceptionOnListeningSocket:)])
-			return [_delegate		  server: self
-			    didReceiveExceptionOnListeningSocket: exception];
+			return false;
 
-		return false;
+		return [_delegate		  server: self
+		    didReceiveExceptionOnListeningSocket: exception];
 	}
 
 	connection = [[[OFHTTPServer_Connection alloc]
-	    initWithSocket: clientSocket
+	    initWithSocket: acceptedSocket
 		    server: self] autorelease];
 
-	[clientSocket asyncReadLineWithTarget: connection
-				     selector: @selector(socket:didReadLine:
-						  context:exception:)
-				      context: nil];
+	[(OFTCPSocket *)acceptedSocket setDelegate: connection];
+	[acceptedSocket asyncReadLine];
 
 	return true;
 }

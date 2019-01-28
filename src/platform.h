@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -121,6 +121,8 @@
 # define OF_ANDROID
 #elif defined(__HAIKU__)
 # define OF_HAIKU
+#elif defined(_AIX)
+# define OF_AIX
 #elif defined(__MORPHOS__)
 # ifndef __ixemul__
 #  define OF_MORPHOS

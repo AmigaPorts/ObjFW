@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017,
- *               2018
+ *               2018, 2019
  *   Jonathan Schleifer <js@heap.zone>
  *
  * All rights reserved.
@@ -22,7 +22,10 @@
 
 OF_ASSUME_NONNULL_BEGIN
 
+#define OF_DNS_RESOLVER_BUFFER_LENGTH 512
+
 @class OFArray OF_GENERIC(ObjectType);
+@class OFDNSResolver;
 @class OFDNSResolverQuery;
 @class OFDate;
 @class OFDictionary OF_GENERIC(KeyType, ObjectType);
@@ -61,6 +64,53 @@ typedef enum of_dns_resolver_error_t {
 	OF_DNS_RESOLVER_ERROR_SERVER_REFUSED
 } of_dns_resolver_error_t;
 
+typedef OFDictionary OF_GENERIC(OFString *,
+    OFArray OF_GENERIC(OFDNSResourceRecord *) *) *of_dns_resolver_records_t;
+
+/*!
+ * @protocol OFDNSResolverDelegate OFDNSResolver.h ObjFW/OFDNSResolver.h
+ *
+ * @brief A delegate for OFDNSResolver.
+ */
+@protocol OFDNSResolverDelegate <OFObject>
+@optional
+/*!
+ * @brief This method is called when a DNS resolver resolved a domain name.
+ *
+ * @param resolver The acting resolver
+ * @param domainName The fully qualified domain name used to resolve the host
+ * @param answerRecords The answer records from the name server, grouped by
+ *			domain name
+ * @param authorityRecords The authority records from the name server, grouped
+ *			   by domain name
+ * @param additionalRecords Additional records sent by the name server, grouped
+ *			    by domain name
+ * @param exception An exception that happened during resolving, or nil on
+ *		    success
+ */
+-	(void)resolver: (OFDNSResolver *)resolver
+  didResolveDomainName: (OFString *)domainName
+	 answerRecords: (nullable of_dns_resolver_records_t)answerRecords
+      authorityRecords: (nullable of_dns_resolver_records_t)authorityRecords
+     additionalRecords: (nullable of_dns_resolver_records_t)additionalRecords
+	     exception: (nullable id)exception;
+
+/*!
+ * @brief This method is called when a DNS resolver resolved a domain name to
+ *	  socket addresses.
+ *
+ * @param resolver The acting resolver
+ * @param domainName The fully qualified domain name used to resolve the host
+ * @param socketAddresses OFData containing several of_socket_address_t
+ * @param exception The exception that occurred during resolving, or nil on
+ *		    success
+ */
+-	(void)resolver: (OFDNSResolver *)resolver
+  didResolveDomainName: (OFString *)domainName
+       socketAddresses: (nullable OFData *)socketAddresses
+	     exception: (nullable id)exception;
+@end
+
 /*!
  * @class OFDNSResolver OFDNSResolver.h ObjFW/OFDNSResolver.h
  *
@@ -87,6 +137,7 @@ typedef enum of_dns_resolver_error_t {
 #ifdef OF_HAVE_IPV6
 	OFUDPSocket *_IPv6Socket;
 #endif
+	char _buffer[OF_DNS_RESOLVER_BUFFER_LENGTH];
 	OFMutableDictionary OF_GENERIC(OFNumber *, OFDNSResolverQuery *)
 	    *_queries;
 }
@@ -160,43 +211,10 @@ typedef enum of_dns_resolver_error_t {
  * @brief Asynchronously resolves the specified host.
  *
  * @param host The host to resolve
- * @param target The target to call with the result once resolving is done
- * @param selector The selector to call on the target. The signature must be
- *		   the following:
- *		   @parblock
- *
- *		       void (OFDNSResolver *resolver, OFString *domainName,
- *		           OFArray<OFDictionary<OFString *,
- *		           __kindof OFDNSResourceRecord *> *>
- *		           *_Nullable answerRecords,
- *		           OFArray<OFDictionary<OFString *,
- *		           __kindof OFDNSResourceRecord *> *>
- *		           *_Nullable authorityRecords,
- *		           OFArray<OFDictionary<OFString *,
- *		           __kindof OFDNSResourceRecord *> *>
- *		           *_Nullable additionalRecords,
- *		           id _Nullable context, id _Nullable exception)
- *
- *		   `resolver` is the acting resolver.@n
- *		   `domainName` is the fully qualified domain name used to
- *		   resolve the host.@n
- *		   `answerRecords` are the answer records from the name server,
- *		   grouped by domain name.
- *		   @n
- *		   `authorityRecords` are the authority records from the name
- *		   server, grouped by domain name.@n
- *		   `additionalRecords` are additional records sent by the name
- *		   server, grouped by domain name.@n
- *		   `context` is the context object originally passed.@n
- *		   `exception` is an exception that happened during resolving,
- *		   otherwise nil.
- *		   @endparblock
- * @param context A context object to pass along to the target
+ * @param delegate The delegate to use for callbacks
  */
 - (void)asyncResolveHost: (OFString *)host
-		  target: (id)target
-		selector: (SEL)selector
-		 context: (nullable id)context;
+		delegate: (id <OFDNSResolverDelegate>)delegate;
 
 /*!
  * @brief Asynchronously resolves the specified host.
@@ -204,45 +222,12 @@ typedef enum of_dns_resolver_error_t {
  * @param host The host to resolve
  * @param recordClass The desired class of the records to query
  * @param recordType The desired type of the records to query
- * @param target The target to call with the result once resolving is done
- * @param selector The selector to call on the target. The signature must be
- *		   the following:
- *		   @parblock
- *
- *		       void (OFDNSResolver *resolver, OFString *domainName,
- *		           OFArray<OFDictionary<OFString *,
- *		           __kindof OFDNSResourceRecord *> *>
- *		           *_Nullable answerRecords,
- *		           OFArray<OFDictionary<OFString *,
- *		           __kindof OFDNSResourceRecord *> *>
- *		           *_Nullable authorityRecords,
- *		           OFArray<OFDictionary<OFString *,
- *		           __kindof OFDNSResourceRecord *> *>
- *		           *_Nullable additionalRecords,
- *		           id _Nullable context, id _Nullable exception)
- *
- *		   `resolver` is the acting resolver.@n
- *		   `domainName` is the fully qualified domain name used to
- *		   resolve the host.@n
- *		   `answerRecords` are the answer records from the name server,
- *		   grouped by domain name.
- *		   @n
- *		   `authorityRecords` are the authority records from the name
- *		   server, grouped by domain name.@n
- *		   `additionalRecords` are additional records sent by the name
- *		   server, grouped by domain name.@n
- *		   `context` is the context object originally passed.@n
- *		   `exception` is an exception that happened during resolving,
- *		   otherwise nil.
- *		   @endparblock
- * @param context A context object to pass along to the target
+ * @param delegate The delegate to use for callbacks
  */
 - (void)asyncResolveHost: (OFString *)host
 	     recordClass: (of_dns_resource_record_class_t)recordClass
 	      recordType: (of_dns_resource_record_type_t)recordType
-		  target: (id)target
-		selector: (SEL)selector
-		 context: (nullable id)context;
+		delegate: (id <OFDNSResolverDelegate>)delegate;
 
 /*!
  * @brief Asynchronously resolves the specified host.
@@ -251,107 +236,36 @@ typedef enum of_dns_resolver_error_t {
  * @param recordClass The desired class of the records to query
  * @param recordType The desired type of the records to query
  * @param runLoopMode The run loop mode in which to resolve
- * @param target The target to call with the result once resolving is done
- * @param selector The selector to call on the target. The signature must be
- *		   the following:
- *		   @parblock
- *
- *		       void (OFDNSResolver *resolver, OFString *domainName,
- *		           OFArray<OFDictionary<OFString *,
- *		           __kindof OFDNSResourceRecord *> *>
- *		           *_Nullable answerRecords,
- *		           OFArray<OFDictionary<OFString *,
- *		           __kindof OFDNSResourceRecord *> *>
- *		           *_Nullable authorityRecords,
- *		           OFArray<OFDictionary<OFString *,
- *		           __kindof OFDNSResourceRecord *> *>
- *		           *_Nullable additionalRecords,
- *		           id _Nullable context, id _Nullable exception)
- *
- *		   `resolver` is the acting resolver.@n
- *		   `domainName` is the fully qualified domain name used to
- *		   resolve the host.@n
- *		   `answerRecords` are the answer records from the name server,
- *		   grouped by domain name.
- *		   @n
- *		   `authorityRecords` are the authority records from the name
- *		   server, grouped by domain name.@n
- *		   `additionalRecords` are additional records sent by the name
- *		   server, grouped by domain name.@n
- *		   `context` is the context object originally passed.@n
- *		   `exception` is an exception that happened during resolving,
- *		   otherwise nil.
- *		   @endparblock
- * @param context A context object to pass along to the target
+ * @param delegate The delegate to use for callbacks
  */
 - (void)asyncResolveHost: (OFString *)host
 	     recordClass: (of_dns_resource_record_class_t)recordClass
 	      recordType: (of_dns_resource_record_type_t)recordType
 	     runLoopMode: (of_run_loop_mode_t)runLoopMode
-		  target: (id)target
-		selector: (SEL)selector
-		 context: (nullable id)context;
+		delegate: (id <OFDNSResolverDelegate>)delegate;
 
 /*!
  * @brief Asynchronously resolves the specified host to socket addresses.
  *
  * @param host The host to resolve
- * @param target The target to call with the result once resolving is done
- * @param selector The selector to call on the target. The signature must be
- *		   the following:
- *		   @parblock
- *
- *		       void (OFDNSResolver *resolver, OFString *domainName,
- *		           OFData *_Nullable, socketAddresses,
- *		           id _Nullable context, id _Nullable exception)
- *
- *		   `resolver` is the acting resolver.@n
- *		   `domainName` is the fully qualified domain name used to
- *		   resolve the host.@n
- *		   `socketAddresses` is OFData containing several
- *		   of_socket_address_t.@n
- *		   `context` is the context object originally passed.@n
- *		   `exception` is an exception that happened during resolving,
- *		   otherwise nil.
- *		   @endparblock
- * @param context A context object to pass along to the target
+ * @param delegate The delegate to use for callbacks
  */
 - (void)asyncResolveSocketAddressesForHost: (OFString *)host
-				    target: (id)target
-				  selector: (SEL)selector
-				   context: (nullable id)context;
+				  delegate: (id <OFDNSResolverDelegate>)
+						delegate;
 
 /*!
  * @brief Asynchronously resolves the specified host to socket addresses.
  *
  * @param host The host to resolve
  * @param addressFamily The desired socket address family
- * @param target The target to call with the result once resolving is done
- * @param selector The selector to call on the target. The signature must be
- *		   the following:
- *		   @parblock
- *
- *		       void (OFDNSResolver *resolver, OFString *domainName,
- *		           OFData *_Nullable socketAddresses,
- *		           id _Nullable context, id _Nullable exception)
- *
- *		   `resolver` is the acting resolver.@n
- *		   `domainName` is the fully qualified domain name used to
- *		   resolve the host.@n
- *		   `socketAddresses` is OFData containing several
- *		   of_socket_address_t.@n
- *		   `context` is the context object originally passed.@n
- *		   `exception` is an exception that happened during resolving,
- *		   otherwise nil.
- *		   @endparblock
- * @param context A context object to pass along to the target
+ * @param delegate The delegate to use for callbacks
  */
 - (void)asyncResolveSocketAddressesForHost: (OFString *)host
 			     addressFamily: (of_socket_address_family_t)
 						addressFamily
-				    target: (id)target
-				  selector: (SEL)selector
-				   context: (nullable id)context;
+				  delegate: (id <OFDNSResolverDelegate>)
+						delegate;
 
 /*!
  * @brief Asynchronously resolves the specified host to socket addresses.
@@ -359,33 +273,14 @@ typedef enum of_dns_resolver_error_t {
  * @param host The host to resolve
  * @param addressFamily The desired socket address family
  * @param runLoopMode The run loop mode in which to resolve
- * @param target The target to call with the result once resolving is done
- * @param selector The selector to call on the target. The signature must be
- *		   the following:
- *		   @parblock
- *
- *		       void (OFDNSResolver *resolver, OFString *domainName,
- *		           OFData *_Nullable socketAddresses,
- *		           id _Nullable context, id _Nullable exception)
- *
- *		   `resolver` is the acting resolver.@n
- *		   `domainName` is the fully qualified domain name used to
- *		   resolve the host.@n
- *		   `socketAddresses` is OFData containing several
- *		   of_socket_address_t.@n
- *		   `context` is the context object originally passed.@n
- *		   `exception` is an exception that happened during resolving,
- *		   otherwise nil.
- *		   @endparblock
- * @param context A context object to pass along to the target
+ * @param delegate The delegate to use for callbacks
  */
 - (void)asyncResolveSocketAddressesForHost: (OFString *)host
 			     addressFamily: (of_socket_address_family_t)
 						addressFamily
 			       runLoopMode: (of_run_loop_mode_t)runLoopMode
-				    target: (id)target
-				  selector: (SEL)selector
-				   context: (nullable id)context;
+				  delegate: (id <OFDNSResolverDelegate>)
+						delegate;
 
 /*!
  * @brief Synchronously resolves the specified host to socket addresses.
