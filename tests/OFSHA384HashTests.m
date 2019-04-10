@@ -19,13 +19,6 @@
 
 #include <string.h>
 
-#import "OFSHA384Hash.h"
-#import "OFString.h"
-#import "OFFile.h"
-#import "OFAutoreleasePool.h"
-
-#import "OFHashAlreadyCalculatedException.h"
-
 #import "TestsAppDelegate.h"
 
 static OFString *module = @"OFSHA384Hash";
@@ -45,7 +38,7 @@ const uint8_t testfile_sha384[48] =
 
 	TEST(@"+[cryptoHash]", (sha384 = [OFSHA384Hash cryptoHash]))
 
-	while (![f isAtEndOfStream]) {
+	while (!f.atEndOfStream) {
 		char buf[128];
 		size_t len = [f readIntoBuffer: buf
 					length: 128];
@@ -57,8 +50,8 @@ const uint8_t testfile_sha384[48] =
 	TEST(@"-[copy]", (copy = [[sha384 copy] autorelease]))
 
 	TEST(@"-[digest]",
-	    memcmp([sha384 digest], testfile_sha384, 48) == 0 &&
-	    memcmp([copy digest], testfile_sha384, 48) == 0)
+	    memcmp(sha384.digest, testfile_sha384, 48) == 0 &&
+	    memcmp(copy.digest, testfile_sha384, 48) == 0)
 
 	EXPECT_EXCEPTION(@"Detect invalid call of "
 	    @"-[updateWithBuffer:length:]", OFHashAlreadyCalculatedException,

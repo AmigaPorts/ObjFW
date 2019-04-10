@@ -19,10 +19,6 @@
 
 #include <string.h>
 
-#import "OFTCPSocket.h"
-#import "OFString.h"
-#import "OFAutoreleasePool.h"
-
 #import "TestsAppDelegate.h"
 
 static OFString *module = @"OFTCPSocket";
@@ -51,7 +47,7 @@ static OFString *module = @"OFTCPSocket";
 	TEST(@"-[accept]", (accepted = [server accept]))
 
 	TEST(@"-[remoteAddress]",
-	    [of_socket_address_ip_string([accepted remoteAddress], NULL)
+	    [of_socket_address_ip_string(accepted.remoteAddress, NULL)
 	    isEqual: @"127.0.0.1"])
 
 	TEST(@"-[writeString:]", [client writeString: @"Hello!"])

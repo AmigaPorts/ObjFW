@@ -17,11 +17,6 @@
 
 #include "config.h"
 
-#import "OFString.h"
-#import "OFAutoreleasePool.h"
-
-#import "OFNotImplementedException.h"
-
 #import "TestsAppDelegate.h"
 
 static OFString *module = @"Runtime";
@@ -73,7 +68,7 @@ static OFString *module = @"Runtime";
 	RuntimeTest *rt = [[[RuntimeTest alloc] init] autorelease];
 	OFString *t, *foo;
 
-	EXPECT_EXCEPTION(@"Calling a non-existant method via super",
+	EXPECT_EXCEPTION(@"Calling a non-existent method via super",
 	    OFNotImplementedException, [rt superTest])
 
 	TEST(@"Calling a method via a super with self == nil",
@@ -83,12 +78,11 @@ static OFString *module = @"Runtime";
 	foo = @"foo";
 
 	[rt setFoo: t];
-	TEST(@"copy, nonatomic properties", [[rt foo] isEqual: foo] &&
-	    [rt foo] != foo && [[rt foo] retainCount] == 1)
+	TEST(@"copy, nonatomic properties", [rt.foo isEqual: foo] &&
+	    rt.foo != foo && rt.foo.retainCount == 1)
 
-	[rt setBar: t];
-	TEST(@"retain, atomic properties",
-	    [rt bar] == t && [t retainCount] == 3)
+	rt.bar = t;
+	TEST(@"retain, atomic properties", rt.bar == t && t.retainCount == 3)
 
 	[pool drain];
 }

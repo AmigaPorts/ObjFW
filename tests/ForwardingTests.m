@@ -19,11 +19,6 @@
 
 #include <string.h>
 
-#import "OFString.h"
-#import "OFAutoreleasePool.h"
-
-#import "OFNotImplementedException.h"
-
 #import "TestsAppDelegate.h"
 
 #define FMT @"%@ %@ %@ %@ %@ %@ %@ %@ %@ %g %g %g %g %g %g %g %g %g"
@@ -207,7 +202,7 @@ test(id self, SEL _cmd)
 				   : 1.25
 				   : 2.75] == 0x12345678)
 	TEST(@"-[forwardingTargetForSelector:] variable arguments",
-	   [[t forwardingTargetVarArgTest: FMT, ARGS] isEqual: RESULT])
+	    [[t forwardingTargetVarArgTest: FMT, ARGS] isEqual: RESULT])
 	/*
 	 * Don't try fpret on Win64 if we don't have stret forwarding, as
 	 * long double is handled as a struct there.

@@ -26,6 +26,8 @@
 #import "OFHashAlreadyCalculatedException.h"
 #import "OFOutOfRangeException.h"
 
+#define BLOCK_SIZE 128
+
 @interface OFSHA384Or512Hash ()
 - (void)of_resetState;
 @end
@@ -136,7 +138,7 @@ processBlock(uint64_t *state, uint64_t *buffer)
 
 + (size_t)blockSize
 {
-	return 128;
+	return BLOCK_SIZE;
 }
 
 + (instancetype)cryptoHash
@@ -151,9 +153,9 @@ processBlock(uint64_t *state, uint64_t *buffer)
 	@try {
 		_iVarsData = [[OFSecureData alloc]
 		    initWithCount: sizeof(*_iVars)];
-		_iVars = [_iVarsData items];
+		_iVars = _iVarsData.mutableItems;
 
-		if ([self class] == [OFSHA384Or512Hash class]) {
+		if (self.class == [OFSHA384Or512Hash class]) {
 			[self doesNotRecognizeSelector: _cmd];
 			abort();
 		}
@@ -179,12 +181,22 @@ processBlock(uint64_t *state, uint64_t *buffer)
 	[super dealloc];
 }
 
+- (size_t)digestSize
+{
+	OF_UNRECOGNIZED_SELECTOR
+}
+
+- (size_t)blockSize
+{
+	return BLOCK_SIZE;
+}
+
 - (id)copy
 {
 	OFSHA384Or512Hash *copy = [[[self class] alloc] of_init];
 
 	copy->_iVarsData = [_iVarsData copy];
-	copy->_iVars = [copy->_iVarsData items];
+	copy->_iVars = copy->_iVarsData.mutableItems;
 	copy->_calculated = _calculated;
 
 	return copy;

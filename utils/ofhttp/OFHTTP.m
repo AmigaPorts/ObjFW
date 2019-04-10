@@ -131,6 +131,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		DISPOSITION_PARAM_NAME,
 		DISPOSITION_PARAM_VALUE,
 		DISPOSITION_PARAM_QUOTED,
+		DISPOSITION_PARAM_UNQUOTED,
 		DISPOSITION_EXPECT_SEMICOLON
 	} state;
 	size_t last;
@@ -143,8 +144,8 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 
 	pool = objc_autoreleasePoolPush();
 
-	UTF8String = [contentDisposition UTF8String];
-	UTF8StringLength = [contentDisposition UTF8StringLength];
+	UTF8String = contentDisposition.UTF8String;
+	UTF8StringLength = contentDisposition.UTF8StringLength;
 	state = DISPOSITION_TYPE;
 	params = [OFMutableDictionary dictionary];
 	last = 0;
@@ -193,8 +194,9 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 				state = DISPOSITION_PARAM_QUOTED;
 				last = i + 1;
 			} else {
-				objc_autoreleasePoolPop(pool);
-				return nil;
+				state = DISPOSITION_PARAM_UNQUOTED;
+				last = i;
+				i--;
 			}
 			break;
 		case DISPOSITION_PARAM_QUOTED:
@@ -204,9 +206,31 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 						  length: i - last];
 
 				[params setObject: paramValue
-					   forKey: paramName];
+					   forKey: paramName.lowercaseString];
 
 				state = DISPOSITION_EXPECT_SEMICOLON;
+			}
+			break;
+		case DISPOSITION_PARAM_UNQUOTED:
+			if (UTF8String[i] <= 31 || UTF8String[i] >= 127)
+				return nil;
+
+			switch (UTF8String[i]) {
+			case ' ': case '"': case '(': case ')': case ',':
+			case '/': case ':': case '<': case '=': case '>':
+			case '?': case '@': case '[': case '\\': case ']':
+			case '{': case '}':
+				return nil;
+			case ';':
+				paramValue = [OFString
+				    stringWithUTF8String: UTF8String + last
+						  length: i - last];
+
+				[params setObject: paramValue
+					   forKey: paramName.lowercaseString];
+
+				state = DISPOSITION_PARAM_NAME_SKIP_SPACE;
+				break;
 			}
 			break;
 		case DISPOSITION_EXPECT_SEMICOLON:
@@ -221,7 +245,14 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		}
 	}
 
-	if (state != DISPOSITION_EXPECT_SEMICOLON) {
+	if (state == DISPOSITION_PARAM_UNQUOTED) {
+		paramValue = [OFString
+		    stringWithUTF8String: UTF8String + last
+				  length: UTF8StringLength - last];
+
+		[params setObject: paramValue
+			   forKey: paramName.lowercaseString];
+	} else if (state != DISPOSITION_EXPECT_SEMICOLON) {
 		objc_autoreleasePoolPop(pool);
 		return nil;
 	}
@@ -232,7 +263,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		return nil;
 	}
 
-	fileName = [fileName lastPathComponent];
+	fileName = fileName.lastPathComponent;
 
 	[fileName retain];
 	objc_autoreleasePoolPop(pool);
@@ -252,7 +283,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 			    forKey: @"User-Agent"];
 
 		_HTTPClient = [[OFHTTPClient alloc] init];
-		[_HTTPClient setDelegate: self];
+		_HTTPClient.delegate = self;
 
 		_buffer = [self allocMemoryWithSize: [OFSystemInfo pageSize]];
 	} @catch (id e) {
@@ -276,11 +307,11 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	}
 
 	name = [header substringWithRange: of_range(0, pos)];
-	name = [name stringByDeletingEnclosingWhitespaces];
+	name = name.stringByDeletingEnclosingWhitespaces;
 
 	value = [header substringWithRange:
-	    of_range(pos + 1, [header length] - pos - 1)];
-	value = [value stringByDeletingEnclosingWhitespaces];
+	    of_range(pos + 1, header.length - pos - 1)];
+	value = value.stringByDeletingEnclosingWhitespaces;
 
 	[_clientHeaders setObject: value
 			   forKey: name];
@@ -294,8 +325,8 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	_body = [[OFFile alloc] initWithPath: path
 					mode: @"r"];
 
-	bodySize = [[[OFFileManager defaultManager]
-	    attributesOfItemAtPath: path] fileSize];
+	bodySize = [[OFFileManager defaultManager] attributesOfItemAtPath: path]
+	    .fileSize;
 	[_clientHeaders setObject: [OFString stringWithFormat: @"%ju", bodySize]
 			   forKey: @"Content-Length"];
 }
@@ -304,7 +335,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	method = [method uppercaseString];
+	method = method.uppercaseString;
 
 	if ([method isEqual: @"GET"])
 		_method = OF_HTTP_REQUEST_METHOD_GET;
@@ -342,8 +373,8 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 			@throw [OFInvalidFormatException exception];
 
 		host = [proxy substringWithRange: of_range(0, pos)];
-		port = [[proxy substringWithRange:
-		    of_range(pos + 1, [proxy length] - pos - 1)] decimalValue];
+		port = [proxy substringWithRange:
+		    of_range(pos + 1, proxy.length - pos - 1)].decimalValue;
 
 		if (port > UINT16_MAX)
 			@throw [OFOutOfRangeException exception];
@@ -381,16 +412,16 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 
 #ifdef OF_HAVE_SANDBOX
 	OFSandbox *sandbox = [OFSandbox sandbox];
-	[sandbox setAllowsStdIO: true];
-	[sandbox setAllowsReadingFiles: true];
-	[sandbox setAllowsWritingFiles: true];
-	[sandbox setAllowsCreatingFiles: true];
-	[sandbox setAllowsIPSockets: true];
-	[sandbox setAllowsDNS: true];
-	[sandbox setAllowsUserDatabaseReading: true];
-	[sandbox setAllowsTTY: true];
+	sandbox.allowsStdIO = true;
+	sandbox.allowsReadingFiles = true;
+	sandbox.allowsWritingFiles = true;
+	sandbox.allowsCreatingFiles = true;
+	sandbox.allowsIPSockets = true;
+	sandbox.allowsDNS = true;
+	sandbox.allowsUserDatabaseReading = true;
+	sandbox.allowsTTY = true;
 	/* Dropped after parsing options */
-	[sandbox setAllowsUnveil: true];
+	sandbox.allowsUnveil = true;
 
 	[OFApplication activateSandbox: sandbox];
 #endif
@@ -405,32 +436,32 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	while ((option = [optionsParser nextOption]) != '\0') {
 		switch (option) {
 		case 'b':
-			[self setBody: [optionsParser argument]];
+			self.body = optionsParser.argument;
 			break;
 		case 'h':
 			help(of_stdout, true, 0);
 			break;
 		case 'H':
-			[self addHeader: [optionsParser argument]];
+			[self addHeader: optionsParser.argument];
 			break;
 		case 'm':
-			[self setMethod: [optionsParser argument]];
+			self.method = optionsParser.argument;
 			break;
 		case 'P':
-			[self setProxy: [optionsParser argument]];
+			self.proxy = optionsParser.argument;
 			break;
 		case ':':
-			if ([optionsParser lastLongOption] != nil)
+			if (optionsParser.lastLongOption != nil)
 				[of_stderr writeLine:
 				    OF_LOCALIZED(@"long_argument_missing",
 				    @"%[prog]: Argument for option --%[opt] "
 				    @"missing"
 				    @"prog", [OFApplication programName],
-				    @"opt", [optionsParser lastLongOption])];
+				    @"opt", optionsParser.lastLongOption)];
 			else {
 				OFString *optStr = [OFString
 				    stringWithFormat: @"%c",
-				    [optionsParser lastOption]];
+				    optionsParser.lastOption];
 				[of_stderr writeLine:
 				    OF_LOCALIZED(@"argument_missing",
 				    @"%[prog]: Argument for option -%[opt] "
@@ -446,21 +477,21 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 			    OF_LOCALIZED(@"option_takes_no_argument",
 			    @"%[prog]: Option --%[opt] takes no argument",
 			    @"prog", [OFApplication programName],
-			    @"opt", [optionsParser lastLongOption])];
+			    @"opt", optionsParser.lastLongOption)];
 
 			[OFApplication terminateWithStatus: 1];
 			break;
 		case '?':
-			if ([optionsParser lastLongOption] != nil)
+			if (optionsParser.lastLongOption != nil)
 				[of_stderr writeLine:
 				    OF_LOCALIZED(@"unknown_long_option",
 				    @"%[prog]: Unknown option: --%[opt]",
 				    @"prog", [OFApplication programName],
-				    @"opt", [optionsParser lastLongOption])];
+				    @"opt", optionsParser.lastLongOption)];
 			else {
 				OFString *optStr = [OFString
 				    stringWithFormat: @"%c",
-				    [optionsParser lastOption]];
+				    optionsParser.lastOption];
 				[of_stderr writeLine:
 				    OF_LOCALIZED(@"unknown_option",
 				    @"%[prog]: Unknown option: -%[opt]",
@@ -481,14 +512,14 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	[sandbox unveilPath: @"/etc/ssl"
 		permissions: @"r"];
 
-	[sandbox setAllowsUnveil: false];
+	sandbox.allowsUnveil = false;
 	[OFApplication activateSandbox: sandbox];
 #endif
 
 	_outputPath = [outputPath copy];
-	_URLs = [[optionsParser remainingArguments] retain];
+	_URLs = [optionsParser.remainingArguments copy];
 
-	if ([_URLs count] < 1)
+	if (_URLs.count < 1)
 		help(of_stderr, false, 1);
 
 	if (_quiet && _verbose) {
@@ -499,7 +530,16 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		[OFApplication terminateWithStatus: 1];
 	}
 
-	if (_outputPath != nil && [_URLs count] > 1) {
+	if (_outputPath != nil && _detectFileName) {
+		[of_stderr writeLine: OF_LOCALIZED(
+		    @"output_xor_detect_filename",
+		    @"%[prog]: -o / --output and -O / --detect-filename are "
+		    @"mutually exclusive!",
+		    @"prog", [OFApplication programName])];
+		[OFApplication terminateWithStatus: 1];
+	}
+
+	if (_outputPath != nil && _URLs.count > 1) {
 		[of_stderr writeLine:
 		    OF_LOCALIZED(@"output_only_with_one_url",
 		    @"%[prog]: Cannot use -o / --output when more than one URL "
@@ -509,19 +549,19 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	}
 
 	if (_insecure)
-		[_HTTPClient setInsecureRedirectsAllowed: true];
+		_HTTPClient.insecureRedirectsAllowed = true;
 
 	[self performSelector: @selector(downloadNextURL)
 		   afterDelay: 0];
 }
 
 -    (void)client: (OFHTTPClient *)client
-  didCreateSocket: (OF_KINDOF(OFTCPSocket *))sock
+  didCreateSocket: (OFTCPSocket *)sock
 	  request: (OFHTTPRequest *)request
 {
 	if (_insecure && [sock respondsToSelector:
 	    @selector(setCertificateVerificationEnabled:)])
-		[sock setCertificateVerificationEnabled: false];
+		((id <OFTLSSocket>)sock).certificateVerificationEnabled = false;
 }
 
 -     (void)client: (OFHTTPClient *)client
@@ -529,7 +569,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	   request: (OFHTTPRequest *)request
 {
 	/* TODO: Do asynchronously and print status */
-	while (![_body isAtEndOfStream]) {
+	while (!_body.atEndOfStream) {
 		char buffer[4096];
 		size_t length;
 
@@ -549,10 +589,9 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	if (_verbose) {
 		void *pool = objc_autoreleasePoolPush();
 		OFDictionary OF_GENERIC(OFString *, OFString *) *headers =
-		    [response headers];
+		    response.headers;
 		OFEnumerator *keyEnumerator = [headers keyEnumerator];
-		OFEnumerator *objectEnumerator =
-		    [headers objectEnumerator];
+		OFEnumerator *objectEnumerator = [headers objectEnumerator];
 		OFString *key, *object;
 
 		while ((key = [keyEnumerator nextObject]) != nil &&
@@ -564,7 +603,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	}
 
 	if (!_quiet)
-		[of_stdout writeFormat: @"☇ %@", [URL string]];
+		[of_stdout writeFormat: @"☇ %@", URL.string];
 
 	return true;
 }
@@ -582,7 +621,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		    @"%[prog]: Failed to download <%[url]>!\n"
 		    @"  Failed to resolve host: %[exception]",
 		    @"prog", [OFApplication programName],
-		    @"url", [[request URL] string],
+		    @"url", request.URL.string,
 		    @"exception", e)];
 	} else if ([e isKindOfClass: [OFConnectionFailedException class]]) {
 		if (!_quiet)
@@ -593,7 +632,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		    @"%[prog]: Failed to download <%[url]>!\n"
 		    @"  Connection failed: %[exception]",
 		    @"prog", [OFApplication programName],
-		    @"url", [[request URL] string],
+		    @"url", request.URL.string,
 		    @"exception", e)];
 	} else if ([e isKindOfClass: [OFInvalidServerReplyException class]]) {
 		if (!_quiet)
@@ -604,7 +643,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		    @"%[prog]: Failed to download <%[url]>!\n"
 		    @"  Invalid server reply!",
 		    @"prog", [OFApplication programName],
-		    @"url", [[request URL] string])];
+		    @"url", request.URL.string)];
 	} else if ([e isKindOfClass: [OFUnsupportedProtocolException class]]) {
 		if (!_quiet)
 			[of_stdout writeString: @"\n"];
@@ -637,14 +676,14 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		    @"%[prog]: Failed to download <%[url]>!\n"
 		    @"  %[error]: %[exception]",
 		    @"prog", [OFApplication programName],
-		    @"url", [[request URL] string],
+		    @"url", request.URL.string,
 		    @"error", error,
 		    @"exception", e)];
 	} else if ([e isKindOfClass: [OFHTTPRequestFailedException class]]) {
 		[of_stderr writeLine: OF_LOCALIZED(@"download_failed",
 		    @"%[prog]: Failed to download <%[url]>!",
 		    @"prog", [OFApplication programName],
-		    @"url", [[request URL] string])];
+		    @"url", request.URL.string)];
 	} else
 		@throw e;
 
@@ -652,7 +691,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		   afterDelay: 0];
 }
 
--      (bool)stream: (OF_KINDOF(OFStream *))response
+-      (bool)stream: (OFStream *)response
   didReadIntoBuffer: (void *)buffer
 	     length: (size_t)length
 	  exception: (id)exception
@@ -687,10 +726,9 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	[_output writeBuffer: buffer
 		      length: length];
 
-	[_progressBar setReceived: _received];
+	_progressBar.received = _received;
 
-	if ([response isAtEndOfStream] ||
-	    (_length >= 0 && _received >= _length)) {
+	if (response.atEndOfStream || (_length >= 0 && _received >= _length)) {
 		[_progressBar stop];
 		[_progressBar draw];
 		[_progressBar release];
@@ -715,6 +753,9 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 	 statusCode: (int)statusCode
 	    request: (OFHTTPRequest *)request
 {
+	if (statusCode != 206)
+		_resumedFrom = 0;
+
 	if (!_quiet) {
 		OFString *lengthString =
 		    [headers objectForKey: @"Content-Length"];
@@ -726,7 +767,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 			type = OF_LOCALIZED(@"type_unknown", @"unknown");
 
 		if (lengthString != nil)
-			_length = [lengthString decimalValue];
+			_length = lengthString.decimalValue;
 
 		if (_length >= 0) {
 			if (_resumedFrom + _length >= GIBIBYTE) {
@@ -769,7 +810,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 			    [headers objectEnumerator];
 			OFString *key, *object;
 
-			if (statusCode / 100 == 2) {
+			if (statusCode / 100 == 2 && _currentFileName != nil) {
 				[of_stdout writeString: @"  "];
 				[of_stdout writeLine: OF_LOCALIZED(
 				    @"info_name_unaligned",
@@ -783,7 +824,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 							key, object];
 
 			objc_autoreleasePoolPop(pool);
-		} else if (statusCode / 100 == 2) {
+		} else if (statusCode / 100 == 2 && !_detectFileNameRequest) {
 			[of_stdout writeString: @"  "];
 			[of_stdout writeLine: OF_LOCALIZED(@"info_name",
 			    @"Name: %[name]",
@@ -806,7 +847,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 {
 	if (_detectFileNameRequest) {
 		_currentFileName = [fileNameFromContentDisposition(
-		    [[response headers] objectForKey: @"Content-Disposition"])
+		    [response.headers objectForKey: @"Content-Disposition"])
 		    copy];
 		_detectedFileName = true;
 
@@ -835,7 +876,7 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 
 		@try {
 			OFString *mode =
-			    ([response statusCode] == 206 ? @"a" : @"w");
+			    (response.statusCode == 206 ? @"a" : @"w");
 			_output = [[OFFile alloc] initWithPath: _currentFileName
 							  mode: mode];
 		} @catch (OFOpenItemFailedException *e) {
@@ -856,14 +897,14 @@ fileNameFromContentDisposition(OFString *contentDisposition)
 		_progressBar = [[ProgressBar alloc]
 		    initWithLength: _length
 		       resumedFrom: _resumedFrom];
-		[_progressBar setReceived: _received];
+		_progressBar.received = _received;
 		[_progressBar draw];
 	}
 
 	[_currentFileName release];
 	_currentFileName = nil;
 
-	[response setDelegate: self];
+	response.delegate = self;
 	[response asyncReadIntoBuffer: _buffer
 			       length: [OFSystemInfo pageSize]];
 	return;
@@ -890,7 +931,7 @@ next:
 		[_output release];
 	_output = nil;
 
-	if (_URLIndex >= [_URLs count])
+	if (_URLIndex >= _URLs.count)
 		[OFApplication terminateWithStatus: _errorCode];
 
 	@try {
@@ -906,8 +947,7 @@ next:
 		goto next;
 	}
 
-	if (![[URL scheme] isEqual: @"http"] &&
-	    ![[URL scheme] isEqual: @"https"]) {
+	if (![URL.scheme isEqual: @"http"] && ![URL.scheme isEqual: @"https"]) {
 		[of_stderr writeLine: OF_LOCALIZED(@"invalid_scheme",
 		    @"%[prog]: Invalid scheme: <%[url]>!",
 		    @"prog", [OFApplication programName],
@@ -921,34 +961,33 @@ next:
 
 	if (_detectFileName && !_detectedFileName) {
 		if (!_quiet)
-			[of_stdout writeFormat: @"⠒ %@", [URL string]];
+			[of_stdout writeFormat: @"⠒ %@", URL.string];
 
 		request = [OFHTTPRequest requestWithURL: URL];
-		[request setHeaders: clientHeaders];
-		[request setMethod: OF_HTTP_REQUEST_METHOD_HEAD];
+		request.headers = clientHeaders;
+		request.method = OF_HTTP_REQUEST_METHOD_HEAD;
 
 		_detectFileNameRequest = true;
 		[_HTTPClient asyncPerformRequest: request];
 		return;
 	}
 
-	[_currentFileName release];
-	_currentFileName = nil;
-	_detectedFileName = false;
+	if (!_detectedFileName) {
+		[_currentFileName release];
+		_currentFileName = nil;
+	} else
+		_detectedFileName = false;
 
-	if (!_quiet)
-		[of_stdout writeFormat: @"⇣ %@", [URL string]];
-
-	if (_outputPath != nil)
+	if (_currentFileName == nil)
 		_currentFileName = [_outputPath copy];
 
 	if (_currentFileName == nil)
-		_currentFileName = [[[URL path] lastPathComponent] copy];
+		_currentFileName = [URL.path.lastPathComponent copy];
 
 	if (_continue) {
 		@try {
-			uintmax_t size = [[[OFFileManager defaultManager]
-			    attributesOfItemAtPath: _currentFileName] fileSize];
+			uintmax_t size = [[OFFileManager defaultManager]
+			    attributesOfItemAtPath: _currentFileName].fileSize;
 			OFString *range;
 
 			if (size > INTMAX_MAX)
@@ -964,9 +1003,12 @@ next:
 		}
 	}
 
+	if (!_quiet)
+		[of_stdout writeFormat: @"⇣ %@", URL.string];
+
 	request = [OFHTTPRequest requestWithURL: URL];
-	[request setHeaders: clientHeaders];
-	[request setMethod: _method];
+	request.headers = clientHeaders;
+	request.method = _method;
 
 	_detectFileNameRequest = false;
 	[_HTTPClient asyncPerformRequest: request];

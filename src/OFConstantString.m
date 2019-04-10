@@ -33,14 +33,14 @@
 # import <objc/runtime.h>
 
 struct {
-	struct class *isa, *super_class;
+	struct class *isa, *superclass;
 	const char *name;
-	long version, info, instance_size;
-	struct ivar_list *ivars;
-	struct method_list **method_lists;
+	long version, info, instanceSize;
+	struct ivar_list *iVars;
+	struct method_list **methodList;
 	struct cache *cache;
 	struct protocol_list *protocols;
-	const char *ivar_layout;
+	const char *iVarLayout;
 	struct class_ext *ext;
 } _OFConstantStringClassReference;
 #endif
@@ -264,14 +264,14 @@ struct {
 {
 	[self finishInitialization];
 
-	return [self hash];
+	return self.hash;
 }
 
 - (OFString *)description
 {
 	[self finishInitialization];
 
-	return [self description];
+	return self.description;
 }
 
 /* From OFString */
@@ -279,7 +279,7 @@ struct {
 {
 	[self finishInitialization];
 
-	return [self UTF8String];
+	return self.UTF8String;
 }
 
 - (size_t)getCString: (char *)cString_
@@ -304,14 +304,14 @@ struct {
 {
 	[self finishInitialization];
 
-	return [self length];
+	return self.length;
 }
 
 - (size_t)UTF8StringLength
 {
 	[self finishInitialization];
 
-	return [self UTF8StringLength];
+	return self.UTF8StringLength;
 }
 
 - (size_t)cStringLengthWithEncoding: (of_string_encoding_t)encoding
@@ -435,13 +435,6 @@ struct {
 	return [self stringByAppendingPathComponent: component];
 }
 
-- (OFString *)stringByAppendingURLPathComponent: (OFString *)component
-{
-	[self finishInitialization];
-
-	return [self stringByAppendingURLPathComponent: component];
-}
-
 - (OFString *)stringByPrependingString: (OFString *)string
 {
 	[self finishInitialization];
@@ -475,42 +468,42 @@ struct {
 {
 	[self finishInitialization];
 
-	return [self uppercaseString];
+	return self.uppercaseString;
 }
 
 - (OFString *)lowercaseString
 {
 	[self finishInitialization];
 
-	return [self lowercaseString];
+	return self.lowercaseString;
 }
 
 - (OFString *)capitalizedString
 {
 	[self finishInitialization];
 
-	return [self capitalizedString];
+	return self.capitalizedString;
 }
 
 - (OFString *)stringByDeletingLeadingWhitespaces
 {
 	[self finishInitialization];
 
-	return [self stringByDeletingLeadingWhitespaces];
+	return self.stringByDeletingLeadingWhitespaces;
 }
 
 - (OFString *)stringByDeletingTrailingWhitespaces
 {
 	[self finishInitialization];
 
-	return [self stringByDeletingTrailingWhitespaces];
+	return self.stringByDeletingTrailingWhitespaces;
 }
 
 - (OFString *)stringByDeletingEnclosingWhitespaces
 {
 	[self finishInitialization];
 
-	return [self stringByDeletingEnclosingWhitespaces];
+	return self.stringByDeletingEnclosingWhitespaces;
 }
 
 - (bool)hasPrefix: (OFString *)prefix
@@ -565,70 +558,70 @@ struct {
 {
 	[self finishInitialization];
 
-	return [self pathComponents];
+	return self.pathComponents;
 }
 
 - (OFString *)lastPathComponent
 {
 	[self finishInitialization];
 
-	return [self lastPathComponent];
+	return self.lastPathComponent;
 }
 
 - (OFString *)stringByDeletingLastPathComponent
 {
 	[self finishInitialization];
 
-	return [self stringByDeletingLastPathComponent];
+	return self.stringByDeletingLastPathComponent;
 }
 
 - (intmax_t)decimalValue
 {
 	[self finishInitialization];
 
-	return [self decimalValue];
+	return self.decimalValue;
 }
 
 - (uintmax_t)hexadecimalValue
 {
 	[self finishInitialization];
 
-	return [self hexadecimalValue];
+	return self.hexadecimalValue;
 }
 
 - (uintmax_t)octalValue
 {
 	[self finishInitialization];
 
-	return [self octalValue];
+	return self.octalValue;
 }
 
 - (float)floatValue
 {
 	[self finishInitialization];
 
-	return [self floatValue];
+	return self.floatValue;
 }
 
 - (double)doubleValue
 {
 	[self finishInitialization];
 
-	return [self doubleValue];
+	return self.doubleValue;
 }
 
 - (const of_unichar_t *)characters
 {
 	[self finishInitialization];
 
-	return [self characters];
+	return self.characters;
 }
 
 - (const of_char16_t *)UTF16String
 {
 	[self finishInitialization];
 
-	return [self UTF16String];
+	return self.UTF16String;
 }
 
 - (const of_char16_t *)UTF16StringWithByteOrder: (of_byte_order_t)byteOrder
@@ -642,14 +635,14 @@ struct {
 {
 	[self finishInitialization];
 
-	return [self UTF16StringLength];
+	return self.UTF16StringLength;
 }
 
 - (const of_char32_t *)UTF32String
 {
 	[self finishInitialization];
 
-	return [self UTF32String];
+	return self.UTF32String;
 }
 
 - (const of_char32_t *)UTF32StringWithByteOrder: (of_byte_order_t)byteOrder
@@ -671,14 +664,14 @@ struct {
 {
 	[self finishInitialization];
 
-	return [self decomposedStringWithCanonicalMapping];
+	return self.decomposedStringWithCanonicalMapping;
 }
 
 - (OFString *)decomposedStringWithCompatibilityMapping
 {
 	[self finishInitialization];
 
-	return [self decomposedStringWithCompatibilityMapping];
+	return self.decomposedStringWithCompatibilityMapping;
 }
 #endif
 

@@ -17,17 +17,6 @@
 
 #include "config.h"
 
-#import "OFString.h"
-#import "OFArray.h"
-#import "OFData.h"
-#import "OFDate.h"
-#import "OFDictionary.h"
-#import "OFNumber.h"
-#import "OFAutoreleasePool.h"
-
-#import "OFInvalidFormatException.h"
-#import "OFUnsupportedVersionException.h"
-
 #import "TestsAppDelegate.h"
 
 #define PLIST(x)							\
@@ -82,13 +71,13 @@ static OFString *PLIST3 = PLIST(
 	    nil];
 
 	TEST(@"-[propertyListValue:] #1",
-	    [[PLIST1 propertyListValue] isEqual: @"Hello"])
+	    [PLIST1.propertyListValue isEqual: @"Hello"])
 
 	TEST(@"-[propertyListValue:] #2",
-	    [[PLIST2 propertyListValue] isEqual: array])
+	    [PLIST2.propertyListValue isEqual: array])
 
 	TEST(@"-[propertyListValue:] #3",
-	    [[PLIST3 propertyListValue] isEqual:
+	    [PLIST3.propertyListValue isEqual:
 	    [OFDictionary dictionaryWithKeysAndObjects:
 	    @"array", array,
 	    @"foo", @"bar",

@@ -138,7 +138,7 @@ static int
 of_stat(OFString *path, of_stat_t *buffer)
 {
 #if defined(OF_WINDOWS)
-	return _wstat64([path UTF16String], buffer);
+	return _wstat64(path.UTF16String, buffer);
 #elif defined(OF_AMIGAOS)
 	BPTR lock;
 # ifdef OF_AMIGAOS4
@@ -344,89 +344,102 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
     of_stat_t *s, OFURL *URL)
 {
 #ifdef OF_FILE_MANAGER_SUPPORTS_SYMLINKS
-	OFString *path = [URL fileSystemRepresentation];
+	OFString *path = URL.fileSystemRepresentation;
 
 # ifndef OF_WINDOWS
-	if (S_ISLNK(s->st_mode)) {
-		of_string_encoding_t encoding = [OFLocale encoding];
-		char destinationC[PATH_MAX];
-		ssize_t length;
-		OFString *destination;
+	of_string_encoding_t encoding = [OFLocale encoding];
+	char destinationC[PATH_MAX];
+	ssize_t length;
+	OFString *destination;
+	of_file_attribute_key_t key;
+
+	if (!S_ISLNK(s->st_mode))
+		return;
+
+	length = readlink([path cStringWithEncoding: encoding], destinationC,
+	    PATH_MAX);
+
+	if (length < 0)
+		@throw [OFRetrieveItemAttributesFailedException
+		    exceptionWithURL: URL
+			       errNo: errno];
+
+	destination = [OFString stringWithCString: destinationC
+					 encoding: encoding
+					   length: length];
+
+	key = of_file_attribute_key_symbolic_link_destination;
+	[attributes setObject: destination
+		       forKey: key];
+# else
+	HANDLE findHandle;
+	WIN32_FIND_DATAW findData;
+	HANDLE fileHandle;
+	OFString *destination;
+
+	if (func_CreateSymbolicLinkW == NULL)
+		return;
+
+	findHandle = FindFirstFileW(path.UTF16String, &findData);
+	if (findHandle == INVALID_HANDLE_VALUE)
+		return;
+
+	@try {
+		if (!(findData.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+			return;
+
+		if (findData.dwReserved0 != IO_REPARSE_TAG_SYMLINK)
+			return;
+	} @finally {
+		FindClose(findHandle);
+	}
+
+	fileHandle = CreateFileW(path.UTF16String, 0, (FILE_SHARE_READ |
+	    FILE_SHARE_WRITE), NULL, OPEN_EXISTING,
+	    FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+	if (fileHandle == INVALID_HANDLE_VALUE)
+		@throw [OFRetrieveItemAttributesFailedException
+		    exceptionWithURL: URL
+			       errNo: 0];
+
+	@try {
+		union {
+			char bytes[MAXIMUM_REPARSE_DATA_BUFFER_SIZE];
+			REPARSE_DATA_BUFFER data;
+		} buffer;
+		DWORD size;
+		wchar_t *tmp;
 		of_file_attribute_key_t key;
 
-		length = readlink([path cStringWithEncoding: encoding],
-		    destinationC, PATH_MAX);
-
-		if (length < 0)
-			@throw [OFRetrieveItemAttributesFailedException
-			    exceptionWithURL: URL
-				       errNo: errno];
-
-		destination = [OFString stringWithCString: destinationC
-						 encoding: encoding
-						   length: length];
-
-		key = of_file_attribute_key_symbolic_link_destination;
-		[attributes setObject: destination
-			       forKey: key];
-	}
-# else
-	WIN32_FIND_DATAW data;
-
-	if (func_CreateSymbolicLinkW != NULL &&
-	    FindFirstFileW([path UTF16String], &data) &&
-	    (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
-	    data.dwReserved0 == IO_REPARSE_TAG_SYMLINK) {
-		HANDLE handle;
-		OFString *destination;
-
-		if ((handle = CreateFileW([path UTF16String], 0,
-		    (FILE_SHARE_READ | FILE_SHARE_WRITE), NULL, OPEN_EXISTING,
-		    FILE_FLAG_OPEN_REPARSE_POINT, NULL)) ==
-		    INVALID_HANDLE_VALUE)
+		if (!DeviceIoControl(fileHandle, FSCTL_GET_REPARSE_POINT, NULL,
+		    0, buffer.bytes, MAXIMUM_REPARSE_DATA_BUFFER_SIZE, &size,
+		    NULL))
 			@throw [OFRetrieveItemAttributesFailedException
 			    exceptionWithURL: URL
 				       errNo: 0];
 
-		@try {
-			union {
-				char bytes[MAXIMUM_REPARSE_DATA_BUFFER_SIZE];
-				REPARSE_DATA_BUFFER data;
-			} buffer;
-			DWORD size;
-			wchar_t *tmp;
-			of_file_attribute_key_t key;
-
-			if (!DeviceIoControl(handle, FSCTL_GET_REPARSE_POINT,
-			    NULL, 0, buffer.bytes,
-			    MAXIMUM_REPARSE_DATA_BUFFER_SIZE, &size, NULL))
-				@throw [OFRetrieveItemAttributesFailedException
-				    exceptionWithURL: URL
-					       errNo: 0];
-
-			if (buffer.data.ReparseTag != IO_REPARSE_TAG_SYMLINK)
-				@throw [OFRetrieveItemAttributesFailedException
-				    exceptionWithURL: URL
-					       errNo: 0];
+		if (buffer.data.ReparseTag != IO_REPARSE_TAG_SYMLINK)
+			@throw [OFRetrieveItemAttributesFailedException
+			    exceptionWithURL: URL
+				       errNo: 0];
 
 #  define slrb buffer.data.SymbolicLinkReparseBuffer
-			tmp = slrb.PathBuffer +
-			    (slrb.SubstituteNameOffset / sizeof(wchar_t));
+		tmp = slrb.PathBuffer +
+		    (slrb.SubstituteNameOffset / sizeof(wchar_t));
 
-			destination = [OFString
-			    stringWithUTF16String: tmp
-					   length: slrb.SubstituteNameLength /
-						   sizeof(wchar_t)];
+		destination = [OFString
+		    stringWithUTF16String: tmp
+				   length: slrb.SubstituteNameLength /
+					   sizeof(wchar_t)];
 
-			[attributes setObject: of_file_type_symbolic_link
-				       forKey: of_file_attribute_key_type];
-			key = of_file_attribute_key_symbolic_link_destination;
-			[attributes setObject: destination
-				       forKey: key];
+		[attributes setObject: of_file_type_symbolic_link
+			       forKey: of_file_attribute_key_type];
+		key = of_file_attribute_key_symbolic_link_destination;
+		[attributes setObject: destination
+			       forKey: key];
 #  undef slrb
-		} @finally {
-			CloseHandle(handle);
-		}
+	} @finally {
+		CloseHandle(fileHandle);
 	}
 # endif
 #endif
@@ -498,7 +511,7 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 {
 	void *pool = objc_autoreleasePoolPush();
 	OFFile *file = [[OFFile alloc]
-	    initWithPath: [URL fileSystemRepresentation]
+	    initWithPath: URL.fileSystemRepresentation
 		    mode: mode];
 
 	objc_autoreleasePoolPop(pool);
@@ -519,7 +532,7 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	if (![[URL scheme] isEqual: _scheme])
 		@throw [OFInvalidArgumentException exception];
 
-	path = [URL fileSystemRepresentation];
+	path = URL.fileSystemRepresentation;
 
 	if (of_lstat(path, &s) == -1)
 		@throw [OFRetrieveItemAttributesFailedException
@@ -551,13 +564,13 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 		    attributes: (of_file_attributes_t)attributes
 {
 #ifdef OF_FILE_MANAGER_SUPPORTS_PERMISSIONS
-	uint16_t mode = [permissions uInt16Value] & 0777;
-	OFString *path = [URL fileSystemRepresentation];
+	uint16_t mode = permissions.uInt16Value & 0777;
+	OFString *path = URL.fileSystemRepresentation;
 
 # ifndef OF_WINDOWS
 	if (chmod([path cStringWithEncoding: [OFLocale encoding]], mode) != 0)
 # else
-	if (_wchmod([path UTF16String], mode) != 0)
+	if (_wchmod(path.UTF16String, mode) != 0)
 # endif
 		@throw [OFSetItemAttributesFailedException
 		    exceptionWithURL: URL
@@ -576,7 +589,7 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	 attributes: (of_file_attributes_t)attributes
 {
 #ifdef OF_FILE_MANAGER_SUPPORTS_OWNER
-	OFString *path = [URL fileSystemRepresentation];
+	OFString *path = URL.fileSystemRepresentation;
 	uid_t uid = -1;
 	gid_t gid = -1;
 	of_string_encoding_t encoding;
@@ -646,7 +659,7 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	if (URL == nil)
 		@throw [OFInvalidArgumentException exception];
 
-	if (![[URL scheme] isEqual: _scheme])
+	if (![URL.scheme isEqual: _scheme])
 		@throw [OFInvalidArgumentException exception];
 
 	keyEnumerator = [attributes keyEnumerator];
@@ -686,10 +699,10 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	if (URL == nil)
 		@throw [OFInvalidArgumentException exception];
 
-	if (![[URL scheme] isEqual: _scheme])
+	if (![URL.scheme isEqual: _scheme])
 		@throw [OFInvalidArgumentException exception];
 
-	if (of_stat([URL fileSystemRepresentation], &s) == -1)
+	if (of_stat(URL.fileSystemRepresentation, &s) == -1)
 		return false;
 
 	ret = S_ISREG(s.st_mode);
@@ -708,10 +721,10 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	if (URL == nil)
 		@throw [OFInvalidArgumentException exception];
 
-	if (![[URL scheme] isEqual: _scheme])
+	if (![URL.scheme isEqual: _scheme])
 		@throw [OFInvalidArgumentException exception];
 
-	if (of_stat([URL fileSystemRepresentation], &s) == -1)
+	if (of_stat(URL.fileSystemRepresentation, &s) == -1)
 		return false;
 
 	ret = S_ISDIR(s.st_mode);
@@ -729,13 +742,13 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	if (URL == nil)
 		@throw [OFInvalidArgumentException exception];
 
-	if (![[URL scheme] isEqual: _scheme])
+	if (![URL.scheme isEqual: _scheme])
 		@throw [OFInvalidArgumentException exception];
 
-	path = [URL fileSystemRepresentation];
+	path = URL.fileSystemRepresentation;
 
 #if defined(OF_WINDOWS)
-	if (_wmkdir([path UTF16String]) != 0)
+	if (_wmkdir(path.UTF16String) != 0)
 		@throw [OFCreateDirectoryFailedException
 		    exceptionWithURL: URL
 			       errNo: errno];
@@ -794,10 +807,10 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	if (URL == nil)
 		@throw [OFInvalidArgumentException exception];
 
-	if (![[URL scheme] isEqual: _scheme])
+	if (![URL.scheme isEqual: _scheme])
 		@throw [OFInvalidArgumentException exception];
 
-	path = [URL fileSystemRepresentation];
+	path = URL.fileSystemRepresentation;
 
 #if defined(OF_WINDOWS)
 	HANDLE handle;
@@ -805,7 +818,7 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 
 	path = [path stringByAppendingString: @"\\*"];
 
-	if ((handle = FindFirstFileW([path UTF16String],
+	if ((handle = FindFirstFileW(path.UTF16String,
 	    &fd)) == INVALID_HANDLE_VALUE) {
 		int errNo = 0;
 
@@ -825,7 +838,8 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 			    !wcscmp(fd.cFileName, L".."))
 				continue;
 
-			file = [OFString stringWithUTF16String: fd.cFileName];
+			file = [[OFString alloc]
+			    initWithUTF16String: fd.cFileName];
 			@try {
 				[files addObject: file];
 			} @finally {
@@ -1008,10 +1022,10 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	if (URL == nil)
 		@throw [OFInvalidArgumentException exception];
 
-	if (![[URL scheme] isEqual: _scheme])
+	if (![URL.scheme isEqual: _scheme])
 		@throw [OFInvalidArgumentException exception];
 
-	path = [URL fileSystemRepresentation];
+	path = URL.fileSystemRepresentation;
 
 	if (of_lstat(path, &s) != 0)
 		@throw [OFRemoveItemFailedException exceptionWithURL: URL
@@ -1051,7 +1065,7 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 # ifndef OF_WINDOWS
 		if (rmdir([path cStringWithEncoding: [OFLocale encoding]]) != 0)
 # else
-		if (_wrmdir([path UTF16String]) != 0)
+		if (_wrmdir(path.UTF16String) != 0)
 # endif
 			@throw [OFRemoveItemFailedException
 				exceptionWithURL: URL
@@ -1061,7 +1075,7 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 		if (unlink([path cStringWithEncoding:
 		    [OFLocale encoding]]) != 0)
 # else
-		if (_wunlink([path UTF16String]) != 0)
+		if (_wunlink(path.UTF16String) != 0)
 # endif
 			@throw [OFRemoveItemFailedException
 			    exceptionWithURL: URL
@@ -1110,12 +1124,12 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	if (source == nil || destination == nil)
 		@throw [OFInvalidArgumentException exception];
 
-	if (![[source scheme] isEqual: _scheme] ||
-	    ![[destination scheme] isEqual: _scheme])
+	if (![source.scheme isEqual: _scheme] ||
+	    ![destination.scheme isEqual: _scheme])
 		@throw [OFInvalidArgumentException exception];
 
-	sourcePath = [source fileSystemRepresentation];
-	destinationPath = [destination fileSystemRepresentation];
+	sourcePath = source.fileSystemRepresentation;
+	destinationPath = destination.fileSystemRepresentation;
 
 # ifndef OF_WINDOWS
 	of_string_encoding_t encoding = [OFLocale encoding];
@@ -1127,8 +1141,8 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 			    destinationURL: destination
 				     errNo: errno];
 # else
-	if (!CreateHardLinkW([destinationPath UTF16String],
-	    [sourcePath UTF16String], NULL))
+	if (!CreateHardLinkW(destinationPath.UTF16String,
+	    sourcePath.UTF16String, NULL))
 		@throw [OFLinkFailedException
 		    exceptionWithSourceURL: source
 			    destinationURL: destination
@@ -1149,10 +1163,10 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	if (URL == nil || target == nil)
 		@throw [OFInvalidArgumentException exception];
 
-	if (![[URL scheme] isEqual: _scheme])
+	if (![URL.scheme isEqual: _scheme])
 		@throw [OFInvalidArgumentException exception];
 
-	path = [URL fileSystemRepresentation];
+	path = URL.fileSystemRepresentation;
 
 # ifndef OF_WINDOWS
 	of_string_encoding_t encoding = [OFLocale encoding];
@@ -1168,8 +1182,7 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 		@throw [OFNotImplementedException exceptionWithSelector: _cmd
 								 object: self];
 
-	if (!func_CreateSymbolicLinkW([path UTF16String],
-	    [target UTF16String], 0))
+	if (!func_CreateSymbolicLinkW(path.UTF16String, target.UTF16String, 0))
 		@throw [OFCreateSymbolicLinkFailedException
 		    exceptionWithURL: URL
 			      target: target
@@ -1185,8 +1198,8 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 {
 	void *pool;
 
-	if (![[source scheme] isEqual: _scheme] ||
-	    ![[destination scheme] isEqual: _scheme])
+	if (![source.scheme isEqual: _scheme] ||
+	    ![destination.scheme isEqual: _scheme])
 		return false;
 
 	if ([self fileExistsAtURL: destination])
@@ -1198,8 +1211,8 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 	pool = objc_autoreleasePoolPush();
 
 #if defined(OF_WINDOWS)
-	if (_wrename([[source fileSystemRepresentation] UTF16String],
-	    [[destination fileSystemRepresentation] UTF16String]) != 0)
+	if (_wrename(source.fileSystemRepresentation.UTF16String,
+	    destination.fileSystemRepresentation.UTF16String) != 0)
 		@throw [OFMoveItemFailedException
 		    exceptionWithSourceURL: source
 			    destinationURL: destination
@@ -1207,9 +1220,9 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 #elif defined(OF_AMIGAOS)
 	of_string_encoding_t encoding = [OFLocale encoding];
 
-	if (!Rename([[source fileSystemRepresentation]
+	if (!Rename([source.fileSystemRepresentation
 	    cStringWithEncoding: encoding],
-	    [[destination fileSystemRepresentation]
+	    [destination.fileSystemRepresentation
 	    cStringWithEncoding: encoding])) {
 		int errNo;
 
@@ -1243,9 +1256,9 @@ setSymbolicLinkDestinationAttribute(of_mutable_file_attributes_t attributes,
 #else
 	of_string_encoding_t encoding = [OFLocale encoding];
 
-	if (rename([[source fileSystemRepresentation]
+	if (rename([source.fileSystemRepresentation
 	    cStringWithEncoding: encoding],
-	    [[destination fileSystemRepresentation]
+	    [destination.fileSystemRepresentation
 	    cStringWithEncoding: encoding]) != 0)
 		@throw [OFMoveItemFailedException
 		    exceptionWithSourceURL: source

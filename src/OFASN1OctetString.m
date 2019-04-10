@@ -26,9 +26,24 @@
 @implementation OFASN1OctetString
 @synthesize octetStringValue = _octetStringValue;
 
-- (instancetype)init
++ (instancetype)octetStringWithOctetStringValue: (OFData *)octetStringValue
 {
-	OF_INVALID_INIT_METHOD
+	return [[[self alloc]
+	    initWithOctetStringValue: octetStringValue] autorelease];
+}
+
+- (instancetype)initWithOctetStringValue: (OFData *)octetStringValue
+{
+	self = [super init];
+
+	@try {
+		_octetStringValue = [octetStringValue copy];
+	} @catch (id e) {
+		[self release];
+		@throw e;
+	}
+
+	return self;
 }
 
 - (instancetype)initWithTagClass: (of_asn1_tag_class_t)tagClass
@@ -36,24 +51,25 @@
 		     constructed: (bool)constructed
 	      DEREncodedContents: (OFData *)DEREncodedContents
 {
-	self = [super init];
-
 	@try {
 		if (tagClass != OF_ASN1_TAG_CLASS_UNIVERSAL ||
 		    tagNumber != OF_ASN1_TAG_NUMBER_OCTET_STRING ||
 		    constructed)
 			@throw [OFInvalidArgumentException exception];
 
-		if ([DEREncodedContents itemSize] != 1)
+		if (DEREncodedContents.itemSize != 1)
 			@throw [OFInvalidArgumentException exception];
-
-		_octetStringValue = [DEREncodedContents copy];
 	} @catch (id e) {
 		[self release];
 		@throw e;
 	}
 
-	return self;
+	return [self initWithOctetStringValue: DEREncodedContents];
+}
+
+- (instancetype)init
+{
+	OF_INVALID_INIT_METHOD
 }
 
 - (void)dealloc
@@ -80,7 +96,7 @@
 
 - (uint32_t)hash
 {
-	return [_octetStringValue hash];
+	return _octetStringValue.hash;
 }
 
 - (OFString *)description

@@ -27,9 +27,18 @@
 @implementation OFASN1Boolean
 @synthesize booleanValue = _booleanValue;
 
-- (instancetype)init
++ (instancetype)booleanWithBooleanValue: (bool)booleanValue
 {
-	OF_INVALID_INIT_METHOD
+	return [[[self alloc] initWithBooleanValue: booleanValue] autorelease];
+}
+
+- (instancetype)initWithBooleanValue: (bool)booleanValue
+{
+	self = [super init];
+
+	_booleanValue = booleanValue;
+
+	return self;
 }
 
 - (instancetype)initWithTagClass: (of_asn1_tag_class_t)tagClass
@@ -37,31 +46,44 @@
 		     constructed: (bool)constructed
 	      DEREncodedContents: (OFData *)DEREncodedContents
 {
-	self = [super init];
+	unsigned char value;
 
 	@try {
-		unsigned char value;
-
 		if (tagClass != OF_ASN1_TAG_CLASS_UNIVERSAL ||
 		    tagNumber != OF_ASN1_TAG_NUMBER_BOOLEAN || constructed)
 			@throw [OFInvalidArgumentException exception];
 
-		if ([DEREncodedContents itemSize] != 1 ||
-		    [DEREncodedContents count] != 1)
+		if (DEREncodedContents.itemSize != 1 ||
+		    DEREncodedContents.count != 1)
 			@throw [OFInvalidFormatException exception];
 
 		value = *(unsigned char *)[DEREncodedContents itemAtIndex: 0];
 
 		if (value != 0 && value != 0xFF)
 			@throw [OFInvalidFormatException exception];
-
-		_booleanValue = value;
 	} @catch (id e) {
 		[self release];
 		@throw e;
 	}
 
-	return self;
+	return [self initWithBooleanValue: !!value];
+}
+
+- (instancetype)init
+{
+	OF_INVALID_INIT_METHOD
+}
+
+- (OFData *)DEREncodedValue
+{
+	char buffer[] = {
+		OF_ASN1_TAG_NUMBER_BOOLEAN,
+		1,
+		(_booleanValue ? 0xFF : 0x00)
+	};
+
+	return [OFData dataWithItems: buffer
+			       count: sizeof(buffer)];
 }
 
 - (bool)isEqual: (id)object

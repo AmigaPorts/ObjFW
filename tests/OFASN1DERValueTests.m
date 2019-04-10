@@ -17,29 +17,7 @@
 
 #include "config.h"
 
-#import "OFData.h"
-#import "OFASN1BitString.h"
-#import "OFASN1Boolean.h"
-#import "OFASN1IA5String.h"
-#import "OFASN1Integer.h"
-#import "OFASN1NumericString.h"
-#import "OFASN1ObjectIdentifier.h"
-#import "OFASN1OctetString.h"
-#import "OFASN1PrintableString.h"
-#import "OFASN1UTF8String.h"
-#import "OFArray.h"
-#import "OFNull.h"
-#import "OFNumber.h"
-#import "OFSet.h"
-#import "OFString.h"
-#import "OFAutoreleasePool.h"
-
 #import "TestsAppDelegate.h"
-
-#import "OFInvalidEncodingException.h"
-#import "OFInvalidFormatException.h"
-#import "OFOutOfRangeException.h"
-#import "OFTruncatedDataException.h"
 
 static OFString *module = @"OFData+ASN1DERValue";
 
@@ -118,28 +96,28 @@ static OFString *module = @"OFData+ASN1DERValue";
 	TEST(@"Parsing of bit string",
 	    (bitString = [[OFData dataWithItems: "\x03\x01\x00"
 					  count: 3] ASN1DERValue]) &&
-	    [[bitString bitStringValue] isEqual: [OFData dataWithItems: ""
-								 count: 0]] &&
-	    [bitString bitStringLength] == 0 &&
+	    [bitString.bitStringValue isEqual: [OFData dataWithItems: ""
+					count: 0]] &&
+	    bitString.bitStringLength == 0 &&
 	    (bitString = [[OFData dataWithItems: "\x03\x0D\x01Hello World\x80"
 					  count: 15] ASN1DERValue]) &&
-	    [[bitString bitStringValue]
+	    [bitString.bitStringValue
 	    isEqual: [OFData dataWithItems: "Hello World\x80"
 				     count: 12]] &&
-	    [bitString bitStringLength] == 97 &&
+	    bitString.bitStringLength == 97 &&
 	    (bitString = [[OFData dataWithItems: "\x03\x81\x80\x00xxxxxxxxxxxxx"
 						 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 						 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 						 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 						 "xxxxxxxxxxxxxxxxxxxxxxxxxxx"
 					  count: 131] ASN1DERValue]) &&
-	    [[bitString bitStringValue]
+	    [bitString.bitStringValue
 	    isEqual: [OFData dataWithItems: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 					    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 					    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 					    "xxxxxxxxxxxxxxxxxxxxxxxxx"
 				     count: 127]] &&
-	    [bitString bitStringLength] == 127 * 8)
+	    bitString.bitStringLength == 127 * 8)
 
 	EXPECT_EXCEPTION(@"Detection of invalid bit string #1",
 	    OFInvalidFormatException, [[OFData dataWithItems: "\x03\x00"
@@ -199,23 +177,23 @@ static OFString *module = @"OFData+ASN1DERValue";
 	TEST(@"Parsing of Object Identifier",
 	    (array = [[[OFData dataWithItems: "\x06\x01\x27"
 				       count: 3] ASN1DERValue]
-	    subidentifiers]) && [array count] == 2 &&
+	    subidentifiers]) && array.count == 2 &&
 	    [[array objectAtIndex: 0] uIntMaxValue] == 0 &&
 	    [[array objectAtIndex: 1] uIntMaxValue] == 39 &&
 	    (array = [[[OFData dataWithItems: "\x06\x01\x4F"
 				       count: 3] ASN1DERValue]
-	    subidentifiers]) && [array count] == 2 &&
+	    subidentifiers]) && array.count == 2 &&
 	    [[array objectAtIndex: 0] uIntMaxValue] == 1 &&
 	    [[array objectAtIndex: 1] uIntMaxValue] == 39 &&
 	    (array = [[[OFData dataWithItems: "\x06\x02\x88\x37"
 				       count: 4] ASN1DERValue]
-	    subidentifiers]) && [array count] == 2 &&
+	    subidentifiers]) && array.count == 2 &&
 	    [[array objectAtIndex: 0] uIntMaxValue] == 2 &&
 	    [[array objectAtIndex: 1] uIntMaxValue] == 999 &&
 	    (array = [[[OFData dataWithItems: "\x06\x09\x2A\x86\x48\x86\xF7\x0D"
 					      "\x01\x01\x0B"
 				       count: 11] ASN1DERValue]
-	    subidentifiers]) && [array count] == 7 &&
+	    subidentifiers]) && array.count == 7 &&
 	    [[array objectAtIndex: 0] uIntMaxValue] == 1 &&
 	    [[array objectAtIndex: 1] uIntMaxValue] == 2 &&
 	    [[array objectAtIndex: 2] uIntMaxValue] == 840 &&
@@ -325,10 +303,10 @@ static OFString *module = @"OFData+ASN1DERValue";
 	TEST(@"Parsing of sequence",
 	    (array = [[OFData dataWithItems: "\x30\x00"
 				      count: 2] ASN1DERValue]) &&
-	    [array isKindOfClass: [OFArray class]] && [array count] == 0 &&
+	    [array isKindOfClass: [OFArray class]] && array.count == 0 &&
 	    (array = [[OFData dataWithItems: "\x30\x09\x02\x01\x7B\x0C\x04Test"
 				      count: 11] ASN1DERValue]) &&
-	    [array isKindOfClass: [OFArray class]] && [array count] == 2 &&
+	    [array isKindOfClass: [OFArray class]] && array.count == 2 &&
 	    [[array objectAtIndex: 0] integerValue] == 123 &&
 	    [[[array objectAtIndex: 1] stringValue] isEqual: @"Test"])
 
@@ -345,10 +323,10 @@ static OFString *module = @"OFData+ASN1DERValue";
 	TEST(@"Parsing of set",
 	    (set = [[OFData dataWithItems: "\x31\x00"
 				    count: 2] ASN1DERValue]) &&
-	    [set isKindOfClass: [OFSet class]] && [set count] == 0 &&
+	    [set isKindOfClass: [OFSet class]] && set.count == 0 &&
 	    (set = [[OFData dataWithItems: "\x31\x09\x02\x01\x7B\x0C\x04Test"
 				    count: 11] ASN1DERValue]) &&
-	    [set isKindOfClass: [OFSet class]] && [set count] == 2 &&
+	    [set isKindOfClass: [OFSet class]] && set.count == 2 &&
 	    (enumerator = [set objectEnumerator]) &&
 	    [[enumerator nextObject] integerValue] == 123 &&
 	    [[[enumerator nextObject] stringValue] isEqual: @"Test"])

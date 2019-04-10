@@ -17,15 +17,6 @@
 
 #include "config.h"
 
-#import "OFDictionary.h"
-#import "OFString.h"
-#import "OFArray.h"
-#import "OFNumber.h"
-#import "OFAutoreleasePool.h"
-
-#import "OFEnumerationMutationException.h"
-#import "OFUndefinedKeyException.h"
-
 #import "TestsAppDelegate.h"
 
 static OFString *module = nil;
@@ -190,7 +181,7 @@ static OFString *values[] = {
 
 	TEST(@"-[containsObject:]",
 	    [mutDict containsObject: values[0]] &&
-	    ![mutDict containsObject: @"nonexistant"])
+	    ![mutDict containsObject: @"nonexistent"])
 
 	TEST(@"-[containsObjectIdenticalTo:]",
 	    [mutDict containsObjectIdenticalTo: values[0]] &&
@@ -332,7 +323,7 @@ static OFString *values[] = {
 	    }] description] isEqual: @"{\n\tkey1 = value_1;\n}"])
 #endif
 
-	TEST(@"-[count]", [mutDict count] == 2)
+	TEST(@"-[count]", mutDict.count == 2)
 
 	TEST(@"+[dictionaryWithKeysAndObjects:]",
 	    (dict = [dictionaryClass dictionaryWithKeysAndObjects:
@@ -360,7 +351,7 @@ static OFString *values[] = {
 
 	TEST(@"-[mutableCopy]",
 	    (mutDict = [[dict mutableCopy] autorelease]) &&
-	    [mutDict count] == [dict count] &&
+	    mutDict.count == dict.count &&
 	    [[mutDict objectForKey: keys[0]] isEqual: values[0]] &&
 	    [[mutDict objectForKey: keys[1]] isEqual: values[1]] &&
 	    R([mutDict setObject: @"value3"

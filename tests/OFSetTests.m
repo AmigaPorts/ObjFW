@@ -17,16 +17,10 @@
 
 #include "config.h"
 
-#import "OFSet.h"
-#import "OFArray.h"
-#import "OFMutableSet_hashtable.h"
-#import "OFNumber.h"
-#import "OFSet_hashtable.h"
-#import "OFAutoreleasePool.h"
-
-#import "OFEnumerationMutationException.h"
-
 #import "TestsAppDelegate.h"
+
+#import "OFMutableSet_hashtable.h"
+#import "OFSet_hashtable.h"
 
 static OFString *module = nil;
 
@@ -110,7 +104,7 @@ static OFString *module = nil;
 
 - (size_t)count
 {
-	return [_set count];
+	return _set.count;
 }
 
 - (bool)containsObject: (id)object
@@ -171,12 +165,12 @@ static OFString *module = nil;
 
 	TEST(@"-[isEqual:]", [set1 isEqual: set2])
 
-	TEST(@"-[hash]", [set1 hash] == [set2 hash])
+	TEST(@"-[hash]", set1.hash == set2.hash)
 
 	TEST(@"-[description]",
-	    [[set1 description]
+	    [set1.description
 	    isEqual: @"{(\n\tx,\n\tbar,\n\tfoo,\n\tbaz\n)}"] &&
-	    [[set1 description] isEqual: [set2 description]])
+	    [set1.description isEqual: set2.description])
 
 	TEST(@"-[copy]", [set1 isEqual: [[set1 copy] autorelease]])
 

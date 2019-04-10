@@ -32,22 +32,21 @@ int _OFString_PathAdditions_reference;
 	bool first = true;
 
 	for (OFString *component in components) {
-		if ([component length] == 0)
+		if (component.length == 0)
 			continue;
 
-		if ([component isEqual: @"\\"] || [component isEqual: @"/"])
+		if (!first && ![ret hasSuffix: @":"] &&
+		    ([component isEqual: @"\\"] || [component isEqual: @"/"]))
 			continue;
 
-		if (!first && ![ret hasSuffix: @"\\"] && ![ret hasSuffix: @"/"])
+		if (!first && ![ret hasSuffix: @"\\"] &&
+		    ![ret hasSuffix: @"/"] && ![ret hasSuffix: @":"])
 			[ret appendString: @"\\"];
 
 		[ret appendString: component];
 
 		first = false;
 	}
-
-	if ([ret hasSuffix: @":"])
-		[ret appendString: @"\\"];
 
 	[ret makeImmutable];
 
@@ -58,6 +57,11 @@ int _OFString_PathAdditions_reference;
 
 - (bool)isAbsolutePath
 {
+#ifdef OF_WINDOWS
+	if ([self hasPrefix: @"\\\\"])
+		return true;
+#endif
+
 	return ([self containsString: @":\\"] || [self containsString: @":/"]);
 }
 
@@ -65,20 +69,43 @@ int _OFString_PathAdditions_reference;
 {
 	OFMutableArray OF_GENERIC(OFString *) *ret = [OFMutableArray array];
 	void *pool = objc_autoreleasePoolPush();
-	const char *cString = [self UTF8String];
-	size_t i, last = 0, cStringLength = [self UTF8StringLength];
+	const char *cString = self.UTF8String;
+	size_t i, last = 0, cStringLength = self.UTF8StringLength;
+	bool isUNC = false;
 
 	if (cStringLength == 0) {
 		objc_autoreleasePoolPop(pool);
 		return ret;
 	}
 
+	if ([self hasPrefix: @"\\\\"]) {
+		isUNC = true;
+		[ret addObject: @"\\\\"];
+
+		cString += 2;
+		cStringLength -= 2;
+	}
+
 	for (i = 0; i < cStringLength; i++) {
 		if (cString[i] == '\\' || cString[i] == '/') {
-			if (i - last != 0)
+			if (i == 0)
+				[ret addObject: [OFString
+				    stringWithUTF8String: cString
+						  length: 1]];
+			else if (i - last != 0)
 				[ret addObject: [OFString
 				    stringWithUTF8String: cString + last
 						  length: i - last]];
+
+			last = i + 1;
+		} else if (!isUNC && cString[i] == ':') {
+			if (i + 1 < cStringLength &&
+			    (cString[i + 1] == '\\' || cString[i + 1] == '/'))
+				i++;
+
+			[ret addObject: [OFString
+			    stringWithUTF8String: cString + last
+					  length: i - last + 1]];
 
 			last = i + 1;
 		}
@@ -96,54 +123,21 @@ int _OFString_PathAdditions_reference;
 
 - (OFString *)lastPathComponent
 {
-	void *pool = objc_autoreleasePoolPush();
-	const char *cString;
-	size_t cStringLength;
-	ssize_t i;
-	OFString *ret;
-
-	if ([self hasSuffix: @":\\"] || [self hasSuffix: @":/"])
-		return self;
-
-	cString = [self UTF8String];
-	cStringLength = [self UTF8StringLength];
-
-	if (cStringLength == 0) {
-		objc_autoreleasePoolPop(pool);
-		return @"";
-	}
-
-	if (cString[cStringLength - 1] == '\\' ||
-	    cString[cStringLength - 1] == '/')
-		cStringLength--;
-
-	if (cStringLength == 0) {
-		objc_autoreleasePoolPop(pool);
-		return @"";
-	}
-
-	if (cStringLength - 1 > SSIZE_MAX)
-		@throw [OFOutOfRangeException exception];
-
-	for (i = cStringLength - 1; i >= 0; i--) {
-		if (cString[i] == '\\' || cString[i] == '/') {
-			i++;
-			break;
-		}
-	}
-
 	/*
-	 * Only one component, but the trailing delimiter might have been
-	 * removed, so return a new string anyway.
+	 * Windows/DOS need the full parsing to determine the last path
+	 * component. This could be optimized by not creating the temporary
+	 * objects, though.
 	 */
-	if (i < 0)
-		i = 0;
+	void *pool = objc_autoreleasePoolPush();
+	OFString *ret = self.pathComponents.lastObject;
 
-	ret = [[OFString alloc] initWithUTF8String: cString + i
-					    length: cStringLength - i];
+	if (ret == nil) {
+		objc_autoreleasePoolPop(pool);
+		return @"";
+	}
 
+	[ret retain];
 	objc_autoreleasePoolPop(pool);
-
 	return [ret autorelease];
 }
 
@@ -153,7 +147,7 @@ int _OFString_PathAdditions_reference;
 	OFString *ret, *fileName;
 	size_t pos;
 
-	fileName = [self lastPathComponent];
+	fileName = self.lastPathComponent;
 	pos = [fileName rangeOfString: @"."
 			      options: OF_STRING_SEARCH_BACKWARDS].location;
 	if (pos == OF_NOT_FOUND || pos == 0) {
@@ -162,7 +156,7 @@ int _OFString_PathAdditions_reference;
 	}
 
 	ret = [fileName substringWithRange:
-	    of_range(pos + 1, [fileName length] - pos - 1)];
+	    of_range(pos + 1, fileName.length - pos - 1)];
 
 	[ret retain];
 	objc_autoreleasePoolPop(pool);
@@ -171,45 +165,43 @@ int _OFString_PathAdditions_reference;
 
 - (OFString *)stringByDeletingLastPathComponent
 {
+	/*
+	 * Windows/DOS need the full parsing to delete the last path component.
+	 * This could be optimized, though.
+	 */
 	void *pool = objc_autoreleasePoolPush();
-	const char *cString;
-	size_t cStringLength;
+	OFArray OF_GENERIC(OFString *) *components = self.pathComponents;
+	size_t count = components.count;
 	OFString *ret;
 
-	if ([self hasSuffix: @":\\"] || [self hasSuffix: @":/"])
-		return self;
-
-	cString = [self UTF8String];
-	cStringLength = [self UTF8StringLength];
-
-	if (cStringLength == 0) {
+	if (count == 0) {
 		objc_autoreleasePoolPop(pool);
 		return @"";
 	}
 
-	if (cString[cStringLength - 1] == '\\' ||
-	    cString[cStringLength - 1] == '/')
-		cStringLength--;
+	if (count == 1) {
+		OFString *firstComponent = components.firstObject;
 
-	if (cStringLength == 0) {
-		objc_autoreleasePoolPop(pool);
-		return @"";
-	}
-
-	for (size_t i = cStringLength; i >= 1; i--) {
-		if (cString[i - 1] == '\\' || cString[i - 1] == '/') {
-			ret = [[OFString alloc] initWithUTF8String: cString
-							    length: i - 1];
-
+		if ([firstComponent hasSuffix: @":"] ||
+		    [firstComponent hasSuffix: @":\\"] ||
+		    [firstComponent hasSuffix: @":/"] ||
+		    [firstComponent hasPrefix: @"\\"]) {
+			ret = [firstComponent retain];
 			objc_autoreleasePoolPop(pool);
-
 			return [ret autorelease];
 		}
+
+		objc_autoreleasePoolPop(pool);
+		return @".";
 	}
 
-	objc_autoreleasePoolPop(pool);
+	components = [components objectsInRange:
+	    of_range(0, components.count - 1)];
+	ret = [OFString pathWithComponents: components];
 
-	return @".";
+	[ret retain];
+	objc_autoreleasePoolPop(pool);
+	return [ret autorelease];
 }
 
 - (OFString *)stringByDeletingPathExtension
@@ -219,12 +211,12 @@ int _OFString_PathAdditions_reference;
 	OFString *ret, *fileName;
 	size_t pos;
 
-	if ([self length] == 0)
+	if (self.length == 0)
 		return [[self copy] autorelease];
 
 	pool = objc_autoreleasePoolPush();
-	components = [[[self pathComponents] mutableCopy] autorelease];
-	fileName = [components lastObject];
+	components = [[self.pathComponents mutableCopy] autorelease];
+	fileName = components.lastObject;
 
 	pos = [fileName rangeOfString: @"."
 			      options: OF_STRING_SEARCH_BACKWARDS].location;
@@ -234,7 +226,7 @@ int _OFString_PathAdditions_reference;
 	}
 
 	fileName = [fileName substringWithRange: of_range(0, pos)];
-	[components replaceObjectAtIndex: [components count] - 1
+	[components replaceObjectAtIndex: components.count - 1
 			      withObject: fileName];
 
 	ret = [OFString pathWithComponents: components];
@@ -252,12 +244,12 @@ int _OFString_PathAdditions_reference;
 	OFString *ret;
 	bool done = false;
 
-	if ([self length] == 0)
+	if (self.length == 0)
 		return @"";
 
-	components = [self pathComponents];
+	components = self.pathComponents;
 
-	if ([components count] == 1) {
+	if (components.count == 1) {
 		objc_autoreleasePoolPop(pool);
 		return [[self copy] autorelease];
 	}
@@ -265,7 +257,7 @@ int _OFString_PathAdditions_reference;
 	array = [[components mutableCopy] autorelease];
 
 	while (!done) {
-		size_t length = [array count];
+		size_t length = array.count;
 
 		done = true;
 
@@ -275,15 +267,19 @@ int _OFString_PathAdditions_reference;
 			    (i > 0 ? [array objectAtIndex: i - 1] : 0);
 
 			if ([component isEqual: @"."] ||
-			   [component length] == 0) {
+			   component.length == 0) {
 				[array removeObjectAtIndex: i];
 
 				done = false;
 				break;
 			}
 
-			if ([component isEqual: @".."] &&
-			    parent != nil && ![parent isEqual: @".."]) {
+			if ([component isEqual: @".."] && parent != nil &&
+			    ![parent isEqual: @".."] &&
+			    ![parent hasSuffix: @":"] &&
+			    ![parent hasSuffix: @":\\"] &&
+			    ![parent hasSuffix: @"://"] &&
+			    (![parent hasPrefix: @"\\"] || i != 1)) {
 				[array removeObjectsInRange:
 				    of_range(i - 1, 2)];
 
@@ -293,10 +289,7 @@ int _OFString_PathAdditions_reference;
 		}
 	}
 
-	if ([self hasSuffix: @"\\"] || [self hasSuffix: @"/"])
-		[array addObject: @""];
-
-	ret = [[array componentsJoinedByString: @"\\"] retain];
+	ret = [[OFString pathWithComponents: array] retain];
 
 	objc_autoreleasePoolPop(pool);
 

@@ -35,120 +35,122 @@
 #endif
 
 static struct objc_hashtable *selectors = NULL;
-static uint32_t selectors_cnt = 0;
-static struct objc_sparsearray *selector_names = NULL;
-static void **free_list = NULL;
-static size_t free_list_cnt = 0;
+static uint32_t selectorsCount = 0;
+static struct objc_sparsearray *selectorNames = NULL;
+static void **freeList = NULL;
+static size_t freeListCount = 0;
 
 void
-objc_register_selector(struct objc_abi_selector *sel)
+objc_register_selector(struct objc_abi_selector *rawSelector)
 {
-	struct objc_selector *rsel;
+	struct objc_selector *selector;
 	const char *name;
 
-	if (selectors_cnt > SEL_MAX)
+	if (selectorsCount > SEL_MAX)
 		OBJC_ERROR("Out of selector slots!");
 
 	if (selectors == NULL)
 		selectors = objc_hashtable_new(
 		    objc_hash_string, objc_equal_string, 2);
-	else if ((rsel = objc_hashtable_get(selectors, sel->name)) != NULL) {
-		((struct objc_selector *)sel)->uid = rsel->uid;
+	else if ((selector = objc_hashtable_get(selectors,
+	    rawSelector->name)) != NULL) {
+		((struct objc_selector *)rawSelector)->UID = selector->UID;
 		return;
 	}
 
-	if (selector_names == NULL)
-		selector_names = objc_sparsearray_new(SEL_SIZE);
+	if (selectorNames == NULL)
+		selectorNames = objc_sparsearray_new(SEL_SIZE);
 
-	name = sel->name;
-	rsel = (struct objc_selector *)sel;
-	rsel->uid = selectors_cnt++;
+	name = rawSelector->name;
+	selector = (struct objc_selector *)rawSelector;
+	selector->UID = selectorsCount++;
 
-	objc_hashtable_set(selectors, name, rsel);
-	objc_sparsearray_set(selector_names, (uint32_t)rsel->uid, (void *)name);
+	objc_hashtable_set(selectors, name, selector);
+	objc_sparsearray_set(selectorNames, (uint32_t)selector->UID,
+	    (void *)name);
 }
 
 SEL
 sel_registerName(const char *name)
 {
-	const struct objc_abi_selector *rsel;
-	struct objc_abi_selector *sel;
+	struct objc_abi_selector *rawSelector;
 
 	objc_global_mutex_lock();
 
 	if (selectors != NULL &&
-	    (rsel = objc_hashtable_get(selectors, name)) != NULL) {
+	    (rawSelector= objc_hashtable_get(selectors, name)) != NULL) {
 		objc_global_mutex_unlock();
-		return (SEL)rsel;
+		return (SEL)rawSelector;
 	}
 
-	if ((sel = malloc(sizeof(struct objc_abi_selector))) == NULL)
+	if ((rawSelector = malloc(sizeof(*rawSelector))) == NULL)
 		OBJC_ERROR("Not enough memory to allocate selector!");
 
-	if ((sel->name = of_strdup(name)) == NULL)
+	if ((rawSelector->name = of_strdup(name)) == NULL)
 		OBJC_ERROR("Not enough memory to allocate selector!");
 
-	sel->types = NULL;
+	rawSelector->typeEncoding = NULL;
 
-	if ((free_list = realloc(free_list,
-	    sizeof(void *) * (free_list_cnt + 2))) == NULL)
+	if ((freeList = realloc(freeList,
+	    sizeof(void *) * (freeListCount + 2))) == NULL)
 		OBJC_ERROR("Not enough memory to allocate selector!");
 
-	free_list[free_list_cnt++] = sel;
-	free_list[free_list_cnt++] = (char *)sel->name;
+	freeList[freeListCount++] = rawSelector;
+	freeList[freeListCount++] = (char *)rawSelector->name;
 
-	objc_register_selector(sel);
+	objc_register_selector(rawSelector);
 
 	objc_global_mutex_unlock();
-	return (SEL)sel;
+	return (SEL)rawSelector;
 }
 
 void
 objc_register_all_selectors(struct objc_abi_symtab *symtab)
 {
-	struct objc_abi_selector *sel;
+	struct objc_abi_selector *rawSelector;
 
-	if (symtab->sel_refs == NULL)
+	if (symtab->selectorRefs == NULL)
 		return;
 
-	for (sel = symtab->sel_refs; sel->name != NULL; sel++)
-		objc_register_selector(sel);
+	for (rawSelector = symtab->selectorRefs; rawSelector->name != NULL;
+	    rawSelector++)
+		objc_register_selector(rawSelector);
 }
 
 const char *
-sel_getName(SEL sel)
+sel_getName(SEL selector)
 {
 	const char *ret;
 
 	objc_global_mutex_lock();
-	ret = objc_sparsearray_get(selector_names, (uint32_t)sel->uid);
+	ret = objc_sparsearray_get(selectorNames, (uint32_t)selector->UID);
 	objc_global_mutex_unlock();
 
 	return ret;
 }
 
 bool
-sel_isEqual(SEL sel1, SEL sel2)
+sel_isEqual(SEL selector1, SEL selector2)
 {
-	return (sel1->uid == sel2->uid);
+	return (selector1->UID == selector2->UID);
 }
 
 void
 objc_unregister_all_selectors(void)
 {
 	objc_hashtable_free(selectors);
-	objc_sparsearray_free(selector_names);
+	objc_sparsearray_free(selectorNames);
 
-	if (free_list != NULL) {
-		for (size_t i = 0; i < free_list_cnt; i++)
-			free(free_list[i]);
+	if (freeList != NULL) {
+		for (size_t i = 0; i < freeListCount; i++)
+			free(freeList[i]);
 
-		free(free_list);
+		free(freeList);
 	}
 
 	selectors = NULL;
-	selectors_cnt = 0;
-	selector_names = NULL;
-	free_list = NULL;
-	free_list_cnt = 0;
+	selectorsCount = 0;
+	selectorNames = NULL;
+	freeList = NULL;
+	freeListCount = 0;
 }

@@ -26,34 +26,34 @@
 #import "private.h"
 
 static struct objc_hashtable *classes = NULL;
-static unsigned classes_cnt = 0;
-static Class *load_queue = NULL;
-static size_t load_queue_cnt = 0;
-static struct objc_dtable *empty_dtable = NULL;
-static unsigned lookups_till_fast_path = 128;
-static struct objc_sparsearray *fast_path = NULL;
+static unsigned classesCount = 0;
+static Class *loadQueue = NULL;
+static size_t loadQueueCount = 0;
+static struct objc_dtable *emptyDTable = NULL;
+static unsigned lookupsUntilFastPath = 128;
+static struct objc_sparsearray *fastPath = NULL;
 
 static void
-register_class(struct objc_abi_class *cls)
+registerClass(struct objc_abi_class *rawClass)
 {
 	if (classes == NULL)
 		classes = objc_hashtable_new(
 		    objc_hash_string, objc_equal_string, 2);
 
-	objc_hashtable_set(classes, cls->name, cls);
+	objc_hashtable_set(classes, rawClass->name, rawClass);
 
-	if (empty_dtable == NULL)
-		empty_dtable = objc_dtable_new();
+	if (emptyDTable == NULL)
+		emptyDTable = objc_dtable_new();
 
-	cls->dtable = empty_dtable;
-	cls->metaclass->dtable = empty_dtable;
+	rawClass->DTable = emptyDTable;
+	rawClass->metaclass->DTable = emptyDTable;
 
-	if (strcmp(cls->name, "Protocol") != 0)
-		classes_cnt++;
+	if (strcmp(rawClass->name, "Protocol") != 0)
+		classesCount++;
 }
 
 bool
-class_registerAlias_np(Class cls, const char *name)
+class_registerAlias_np(Class class, const char *name)
 {
 	objc_global_mutex_lock();
 
@@ -63,7 +63,7 @@ class_registerAlias_np(Class cls, const char *name)
 		return NO;
 	}
 
-	objc_hashtable_set(classes, name, (Class)((uintptr_t)cls | 1));
+	objc_hashtable_set(classes, name, (Class)((uintptr_t)class | 1));
 
 	objc_global_mutex_unlock();
 
@@ -71,20 +71,21 @@ class_registerAlias_np(Class cls, const char *name)
 }
 
 static void
-register_selectors(struct objc_abi_class *cls)
+registerSelectors(struct objc_abi_class *rawClass)
 {
-	struct objc_abi_method_list *ml;
+	struct objc_abi_method_list *methodList;
 
-	for (ml = cls->methodlist; ml != NULL; ml = ml->next)
-		for (unsigned int i = 0; i < ml->count; i++)
-			objc_register_selector(
-			    (struct objc_abi_selector *)&ml->methods[i]);
+	for (methodList = rawClass->methodList; methodList != NULL;
+	    methodList = methodList->next)
+		for (unsigned int i = 0; i < methodList->count; i++)
+			objc_register_selector((struct objc_abi_selector *)
+			    &methodList->methods[i]);
 }
 
 Class
 objc_classname_to_class(const char *name, bool cache)
 {
-	Class cls;
+	Class class;
 
 	if (classes == NULL)
 		return Nil;
@@ -110,228 +111,237 @@ objc_classname_to_class(const char *name, bool cache)
 	 * has the lock and thus the performance gain would be small, but it
 	 * would waste memory.
 	 */
-	if (cache && fast_path != NULL) {
-		cls = objc_sparsearray_get(fast_path, (uintptr_t)name);
+	if (cache && fastPath != NULL) {
+		class = objc_sparsearray_get(fastPath, (uintptr_t)name);
 
-		if (cls != Nil)
-			return cls;
+		if (class != Nil)
+			return class;
 	}
 
 	objc_global_mutex_lock();
 
-	cls = (Class)((uintptr_t)objc_hashtable_get(classes, name) & ~1);
+	class = (Class)((uintptr_t)objc_hashtable_get(classes, name) & ~1);
 
-	if (cache && fast_path == NULL && --lookups_till_fast_path == 0)
-		fast_path = objc_sparsearray_new(sizeof(uintptr_t));
+	if (cache && fastPath == NULL && --lookupsUntilFastPath == 0)
+		fastPath = objc_sparsearray_new(sizeof(uintptr_t));
 
-	if (cache && fast_path != NULL)
-		objc_sparsearray_set(fast_path, (uintptr_t)name, cls);
+	if (cache && fastPath != NULL)
+		objc_sparsearray_set(fastPath, (uintptr_t)name, class);
 
 	objc_global_mutex_unlock();
 
-	return cls;
+	return class;
 }
 
 static void
-call_method(Class cls, const char *method)
+callMethod(Class class, const char *method)
 {
 	SEL selector = sel_registerName(method);
 
-	for (struct objc_method_list *ml = cls->isa->methodlist;
-	    ml != NULL; ml = ml->next)
-		for (unsigned int i = 0; i < ml->count; i++)
-			if (sel_isEqual((SEL)&ml->methods[i].sel, selector))
-				((void (*)(id, SEL))ml->methods[i].imp)(cls,
-				    selector);
+	for (struct objc_method_list *methodList = class->isa->methodList;
+	    methodList != NULL; methodList = methodList->next)
+		for (unsigned int i = 0; i < methodList->count; i++)
+			if (sel_isEqual((SEL)&methodList->methods[i].selector,
+			    selector))
+				((void (*)(id, SEL))methodList->methods[i]
+				    .implementation)(class, selector);
 }
 
 static bool
-has_load(Class cls)
+hasLoad(Class class)
 {
 	SEL selector = sel_registerName("load");
 
-	for (struct objc_method_list *ml = cls->isa->methodlist;
-	    ml != NULL; ml = ml->next)
-		for (size_t i = 0; i < ml->count; i++)
-			if (sel_isEqual((SEL)&ml->methods[i].sel, selector))
+	for (struct objc_method_list *methodList = class->isa->methodList;
+	    methodList != NULL; methodList = methodList->next)
+		for (size_t i = 0; i < methodList->count; i++)
+			if (sel_isEqual((SEL)&methodList->methods[i].selector,
+			    selector))
 				return true;
 
 	return false;
 }
 
 static void
-call_load(Class cls)
+callLoad(Class class)
 {
-	if (cls->info & OBJC_CLASS_INFO_LOADED)
+	if (class->info & OBJC_CLASS_INFO_LOADED)
 		return;
 
-	if (cls->superclass != Nil)
-		call_load(cls->superclass);
+	if (class->superclass != Nil)
+		callLoad(class->superclass);
 
-	call_method(cls, "load");
+	callMethod(class, "load");
 
-	cls->info |= OBJC_CLASS_INFO_LOADED;
+	class->info |= OBJC_CLASS_INFO_LOADED;
 }
 
 void
-objc_update_dtable(Class cls)
+objc_update_dtable(Class class)
 {
-	struct objc_method_list *ml;
-	struct objc_category **cats;
+	struct objc_category **categories;
 
-	if (!(cls->info & OBJC_CLASS_INFO_DTABLE))
+	if (!(class->info & OBJC_CLASS_INFO_DTABLE))
 		return;
 
-	if (cls->dtable == empty_dtable)
-		cls->dtable = objc_dtable_new();
+	if (class->DTable == emptyDTable)
+		class->DTable = objc_dtable_new();
 
-	if (cls->superclass != Nil)
-		objc_dtable_copy(cls->dtable, cls->superclass->dtable);
+	if (class->superclass != Nil)
+		objc_dtable_copy(class->DTable, class->superclass->DTable);
 
-	for (ml = cls->methodlist; ml != NULL; ml = ml->next)
-		for (unsigned int i = 0; i < ml->count; i++)
-			objc_dtable_set(cls->dtable,
-			    (uint32_t)ml->methods[i].sel.uid,
-			    ml->methods[i].imp);
+	for (struct objc_method_list *methodList = class->methodList;
+	    methodList != NULL; methodList = methodList->next)
+		for (unsigned int i = 0; i < methodList->count; i++)
+			objc_dtable_set(class->DTable,
+			    (uint32_t)methodList->methods[i].selector.UID,
+			    methodList->methods[i].implementation);
 
-	if ((cats = objc_categories_for_class(cls)) != NULL) {
-		for (unsigned int i = 0; cats[i] != NULL; i++) {
-			ml = (cls->info & OBJC_CLASS_INFO_CLASS ?
-			    cats[i]->instance_methods : cats[i]->class_methods);
+	if ((categories = objc_categories_for_class(class)) != NULL) {
+		for (unsigned int i = 0; categories[i] != NULL; i++) {
+			struct objc_method_list *methodList =
+			    (class->info & OBJC_CLASS_INFO_CLASS
+			    ? categories[i]->instanceMethods
+			    : categories[i]->classMethods);
 
-			for (; ml != NULL; ml = ml->next)
-				for (unsigned int j = 0; j < ml->count; j++)
-					objc_dtable_set(cls->dtable,
-					    (uint32_t)ml->methods[j].sel.uid,
-					    ml->methods[j].imp);
+			for (; methodList != NULL;
+			    methodList = methodList->next)
+				for (unsigned int j = 0;
+				    j < methodList->count; j++)
+					objc_dtable_set(class->DTable,
+					    (uint32_t)methodList->methods[j]
+					    .selector.UID,
+					    methodList->methods[j]
+					    .implementation);
 		}
 	}
 
-	if (cls->subclass_list != NULL)
-		for (Class *iter = cls->subclass_list; *iter != NULL; iter++)
+	if (class->subclassList != NULL)
+		for (Class *iter = class->subclassList; *iter != NULL; iter++)
 			objc_update_dtable(*iter);
 }
 
 static void
-add_subclass(Class cls)
+addSubclass(Class class)
 {
 	size_t i;
 
-	if (cls->superclass->subclass_list == NULL) {
-		if ((cls->superclass->subclass_list =
+	if (class->superclass->subclassList == NULL) {
+		if ((class->superclass->subclassList =
 		    malloc(2 * sizeof(Class))) == NULL)
 			OBJC_ERROR("Not enough memory for subclass list of "
-			    "class %s!", cls->superclass->name);
+			    "class %s!", class->superclass->name);
 
-		cls->superclass->subclass_list[0] = cls;
-		cls->superclass->subclass_list[1] = Nil;
+		class->superclass->subclassList[0] = class;
+		class->superclass->subclassList[1] = Nil;
 
 		return;
 	}
 
-	for (i = 0; cls->superclass->subclass_list[i] != Nil; i++);
+	for (i = 0; class->superclass->subclassList[i] != Nil; i++);
 
-	cls->superclass->subclass_list =
-	    realloc(cls->superclass->subclass_list, (i + 2) * sizeof(Class));
+	class->superclass->subclassList =
+	    realloc(class->superclass->subclassList, (i + 2) * sizeof(Class));
 
-	if (cls->superclass->subclass_list == NULL)
+	if (class->superclass->subclassList == NULL)
 		OBJC_ERROR("Not enough memory for subclass list of class %s\n",
-		    cls->superclass->name);
+		    class->superclass->name);
 
-	cls->superclass->subclass_list[i] = cls;
-	cls->superclass->subclass_list[i + 1] = Nil;
+	class->superclass->subclassList[i] = class;
+	class->superclass->subclassList[i + 1] = Nil;
 }
 
 
 static void
-update_ivar_offsets(Class cls)
+updateIVarOffsets(Class class)
 {
-	if (!(cls->info & OBJC_CLASS_INFO_NEW_ABI))
+	if (!(class->info & OBJC_CLASS_INFO_NEW_ABI))
 		return;
 
-	if (cls->instance_size > 0)
+	if (class->instanceSize > 0)
 		return;
 
-	cls->instance_size = -cls->instance_size;
+	class->instanceSize = -class->instanceSize;
 
-	if (cls->superclass != Nil) {
-		cls->instance_size += cls->superclass->instance_size;
+	if (class->superclass != Nil) {
+		class->instanceSize += class->superclass->instanceSize;
 
-		if (cls->ivars != NULL) {
-			for (unsigned int i = 0; i < cls->ivars->count; i++) {
-				cls->ivars->ivars[i].offset +=
-				    cls->superclass->instance_size;
-				*cls->ivar_offsets[i] =
-				    cls->ivars->ivars[i].offset;
+		if (class->iVars != NULL) {
+			for (unsigned int i = 0; i < class->iVars->count; i++) {
+				class->iVars->iVars[i].offset +=
+				    class->superclass->instanceSize;
+				*class->iVarOffsets[i] =
+				    class->iVars->iVars[i].offset;
 			}
 		}
 	} else
-		for (unsigned int i = 0; i < cls->ivars->count; i++)
-			*cls->ivar_offsets[i] = cls->ivars->ivars[i].offset;
+		for (unsigned int i = 0; i < class->iVars->count; i++)
+			*class->iVarOffsets[i] = class->iVars->iVars[i].offset;
 }
 
 static void
-setup_class(Class cls)
+setupClass(Class class)
 {
-	const char *superclass;
+	const char *superclassName;
 
-	if (cls->info & OBJC_CLASS_INFO_SETUP)
+	if (class->info & OBJC_CLASS_INFO_SETUP)
 		return;
 
-	if ((superclass = ((struct objc_abi_class *)cls)->superclass) != NULL) {
-		Class super = objc_classname_to_class(superclass, false);
+	superclassName = ((struct objc_abi_class *)class)->superclass;
+	if (superclassName != NULL) {
+		Class super = objc_classname_to_class(superclassName, false);
 
 		if (super == Nil)
 			return;
 
-		setup_class(super);
+		setupClass(super);
 
 		if (!(super->info & OBJC_CLASS_INFO_SETUP))
 			return;
 
-		cls->superclass = super;
-		cls->isa->superclass = super->isa;
+		class->superclass = super;
+		class->isa->superclass = super->isa;
 
-		add_subclass(cls);
-		add_subclass(cls->isa);
+		addSubclass(class);
+		addSubclass(class->isa);
 	} else
-		cls->isa->superclass = cls;
+		class->isa->superclass = class;
 
-	update_ivar_offsets(cls);
+	updateIVarOffsets(class);
 
-	cls->info |= OBJC_CLASS_INFO_SETUP;
-	cls->isa->info |= OBJC_CLASS_INFO_SETUP;
+	class->info |= OBJC_CLASS_INFO_SETUP;
+	class->isa->info |= OBJC_CLASS_INFO_SETUP;
 }
 
 static void
-initialize_class(Class cls)
+initializeClass(Class class)
 {
-	if (cls->info & OBJC_CLASS_INFO_INITIALIZED)
+	if (class->info & OBJC_CLASS_INFO_INITIALIZED)
 		return;
 
-	if (cls->superclass)
-		initialize_class(cls->superclass);
+	if (class->superclass)
+		initializeClass(class->superclass);
 
-	cls->info |= OBJC_CLASS_INFO_DTABLE;
-	cls->isa->info |= OBJC_CLASS_INFO_DTABLE;
+	class->info |= OBJC_CLASS_INFO_DTABLE;
+	class->isa->info |= OBJC_CLASS_INFO_DTABLE;
 
-	objc_update_dtable(cls);
-	objc_update_dtable(cls->isa);
+	objc_update_dtable(class);
+	objc_update_dtable(class->isa);
 
 	/*
 	 * Set it first to prevent calling it recursively due to message sends
 	 * in the initialize method
 	 */
-	cls->info |= OBJC_CLASS_INFO_INITIALIZED;
-	cls->isa->info |= OBJC_CLASS_INFO_INITIALIZED;
+	class->info |= OBJC_CLASS_INFO_INITIALIZED;
+	class->isa->info |= OBJC_CLASS_INFO_INITIALIZED;
 
-	call_method(cls, "initialize");
+	callMethod(class, "initialize");
 }
 
 void
-objc_initialize_class(Class cls)
+objc_initialize_class(Class class)
 {
-	if (cls->info & OBJC_CLASS_INFO_INITIALIZED)
+	if (class->info & OBJC_CLASS_INFO_INITIALIZED)
 		return;
 
 	objc_global_mutex_lock();
@@ -341,46 +351,46 @@ objc_initialize_class(Class cls)
 	 * time. Make sure that the thread which held the lock did not already
 	 * initialize it.
 	 */
-	if (cls->info & OBJC_CLASS_INFO_INITIALIZED) {
+	if (class->info & OBJC_CLASS_INFO_INITIALIZED) {
 		objc_global_mutex_unlock();
 		return;
 	}
 
-	setup_class(cls);
+	setupClass(class);
 
-	if (!(cls->info & OBJC_CLASS_INFO_SETUP)) {
+	if (!(class->info & OBJC_CLASS_INFO_SETUP)) {
 		objc_global_mutex_unlock();
 		return;
 	}
 
-	initialize_class(cls);
+	initializeClass(class);
 
 	objc_global_mutex_unlock();
 }
 
 static void
-process_load_queue()
+processLoadQueue()
 {
-	for (size_t i = 0; i < load_queue_cnt; i++) {
-		setup_class(load_queue[i]);
+	for (size_t i = 0; i < loadQueueCount; i++) {
+		setupClass(loadQueue[i]);
 
-		if (load_queue[i]->info & OBJC_CLASS_INFO_SETUP) {
-			call_load(load_queue[i]);
+		if (loadQueue[i]->info & OBJC_CLASS_INFO_SETUP) {
+			callLoad(loadQueue[i]);
 
-			load_queue_cnt--;
+			loadQueueCount--;
 
-			if (load_queue_cnt == 0) {
-				free(load_queue);
-				load_queue = NULL;
+			if (loadQueueCount == 0) {
+				free(loadQueue);
+				loadQueue = NULL;
 				continue;
 			}
 
-			load_queue[i] = load_queue[load_queue_cnt];
+			loadQueue[i] = loadQueue[loadQueueCount];
 
-			load_queue = realloc(load_queue,
-			    sizeof(Class) * load_queue_cnt);
+			loadQueue = realloc(loadQueue,
+			    sizeof(Class) * loadQueueCount);
 
-			if (load_queue == NULL)
+			if (loadQueue == NULL)
 				OBJC_ERROR("Not enough memory for load queue!");
 		}
 	}
@@ -389,95 +399,95 @@ process_load_queue()
 void
 objc_register_all_classes(struct objc_abi_symtab *symtab)
 {
-	for (uint16_t i = 0; i < symtab->cls_def_cnt; i++) {
-		struct objc_abi_class *cls =
+	for (uint16_t i = 0; i < symtab->classDefsCount; i++) {
+		struct objc_abi_class *rawClass =
 		    (struct objc_abi_class *)symtab->defs[i];
 
-		register_class(cls);
-		register_selectors(cls);
-		register_selectors(cls->metaclass);
+		registerClass(rawClass);
+		registerSelectors(rawClass);
+		registerSelectors(rawClass->metaclass);
 	}
 
-	for (uint16_t i = 0; i < symtab->cls_def_cnt; i++) {
-		Class cls = (Class)symtab->defs[i];
+	for (uint16_t i = 0; i < symtab->classDefsCount; i++) {
+		Class class = (Class)symtab->defs[i];
 
-		if (has_load(cls)) {
-			setup_class(cls);
+		if (hasLoad(class)) {
+			setupClass(class);
 
-			if (cls->info & OBJC_CLASS_INFO_SETUP)
-				call_load(cls);
+			if (class->info & OBJC_CLASS_INFO_SETUP)
+				callLoad(class);
 			else {
-				load_queue = realloc(load_queue,
-				    sizeof(Class) * (load_queue_cnt + 1));
+				loadQueue = realloc(loadQueue,
+				    sizeof(Class) * (loadQueueCount + 1));
 
-				if (load_queue == NULL)
+				if (loadQueue == NULL)
 					OBJC_ERROR("Not enough memory for load "
 					    "queue!");
 
-				load_queue[load_queue_cnt++] = cls;
+				loadQueue[loadQueueCount++] = class;
 			}
 		} else
-			cls->info |= OBJC_CLASS_INFO_LOADED;
+			class->info |= OBJC_CLASS_INFO_LOADED;
 	}
 
-	process_load_queue();
+	processLoadQueue();
 }
 
 Class
-objc_allocateClassPair(Class superclass, const char *name, size_t extra_bytes)
+objc_allocateClassPair(Class superclass, const char *name, size_t extraBytes)
 {
-	struct objc_class *cls, *metaclass;
+	struct objc_class *class, *metaclass;
 	Class iter, rootclass = Nil;
 
-	if (extra_bytes > LONG_MAX)
+	if (extraBytes > LONG_MAX)
 		OBJC_ERROR("extra_bytes out of range!")
 
-	if ((cls = calloc(1, sizeof(*cls))) == NULL ||
-	    (metaclass = calloc(1, sizeof(*cls))) == NULL)
+	if ((class = calloc(1, sizeof(*class))) == NULL ||
+	    (metaclass = calloc(1, sizeof(*class))) == NULL)
 		OBJC_ERROR("Not enough memory to allocate class pair for class "
 		    "%s!", name)
 
-	cls->isa = metaclass;
-	cls->superclass = superclass;
-	cls->name = name;
-	cls->info = OBJC_CLASS_INFO_CLASS;
-	cls->instance_size = (superclass != Nil ?
-	    superclass->instance_size : 0) + (long)extra_bytes;
+	class->isa = metaclass;
+	class->superclass = superclass;
+	class->name = name;
+	class->info = OBJC_CLASS_INFO_CLASS;
+	class->instanceSize = (superclass != Nil ?
+	    superclass->instanceSize : 0) + (long)extraBytes;
 
 	for (iter = superclass; iter != Nil; iter = iter->superclass)
 		rootclass = iter;
 
-	metaclass->isa = (rootclass != Nil ? rootclass->isa : cls);
+	metaclass->isa = (rootclass != Nil ? rootclass->isa : class);
 	metaclass->superclass = (superclass != Nil ? superclass->isa : Nil);
 	metaclass->name = name;
 	metaclass->info = OBJC_CLASS_INFO_CLASS;
-	metaclass->instance_size = (superclass != Nil ?
-	    superclass->isa->instance_size : 0) + (long)extra_bytes;
+	metaclass->instanceSize = (superclass != Nil ?
+	    superclass->isa->instanceSize : 0) + (long)extraBytes;
 
-	return cls;
+	return class;
 }
 
 void
-objc_registerClassPair(Class cls)
+objc_registerClassPair(Class class)
 {
 	objc_global_mutex_lock();
 
-	register_class((struct objc_abi_class *)cls);
+	registerClass((struct objc_abi_class *)class);
 
-	if (cls->superclass != Nil) {
-		add_subclass(cls);
-		add_subclass(cls->isa);
+	if (class->superclass != Nil) {
+		addSubclass(class);
+		addSubclass(class->isa);
 	}
 
-	cls->info |= OBJC_CLASS_INFO_SETUP;
-	cls->isa->info |= OBJC_CLASS_INFO_SETUP;
+	class->info |= OBJC_CLASS_INFO_SETUP;
+	class->isa->info |= OBJC_CLASS_INFO_SETUP;
 
-	if (has_load(cls))
-		call_load(cls);
+	if (hasLoad(class))
+		callLoad(class);
 	else
-		cls->info |= OBJC_CLASS_INFO_LOADED;
+		class->info |= OBJC_CLASS_INFO_LOADED;
 
-	process_load_queue();
+	processLoadQueue();
 
 	objc_global_mutex_unlock();
 }
@@ -485,24 +495,24 @@ objc_registerClassPair(Class cls)
 Class
 objc_lookUpClass(const char *name)
 {
-	Class cls;
+	Class class;
 
-	if ((cls = objc_classname_to_class(name, true)) == NULL)
+	if ((class = objc_classname_to_class(name, true)) == NULL)
 		return Nil;
 
-	if (cls->info & OBJC_CLASS_INFO_SETUP)
-		return cls;
+	if (class->info & OBJC_CLASS_INFO_SETUP)
+		return class;
 
 	objc_global_mutex_lock();
 
-	setup_class(cls);
+	setupClass(class);
 
 	objc_global_mutex_unlock();
 
-	if (!(cls->info & OBJC_CLASS_INFO_SETUP))
+	if (!(class->info & OBJC_CLASS_INFO_SETUP))
 		return Nil;
 
-	return cls;
+	return class;
 }
 
 Class
@@ -514,12 +524,12 @@ objc_getClass(const char *name)
 Class
 objc_getRequiredClass(const char *name)
 {
-	Class cls;
+	Class class;
 
-	if ((cls = objc_getClass(name)) == Nil)
+	if ((class = objc_getClass(name)) == Nil)
 		OBJC_ERROR("Class %s not found!", name);
 
-	return cls;
+	return class;
 }
 
 Class
@@ -535,20 +545,20 @@ objc_get_class(const char *name)
 }
 
 unsigned int
-objc_getClassList(Class *buf, unsigned int count)
+objc_getClassList(Class *buffer, unsigned int count)
 {
 	unsigned int j;
 	objc_global_mutex_lock();
 
-	if (buf == NULL)
-		return classes_cnt;
+	if (buffer == NULL)
+		return classesCount;
 
-	if (classes_cnt < count)
-		count = classes_cnt;
+	if (classesCount < count)
+		count = classesCount;
 
 	j = 0;
 	for (uint32_t i = 0; i < classes->size; i++) {
-		void *cls;
+		void *class;
 
 		if (j >= count) {
 			objc_global_mutex_unlock();
@@ -561,12 +571,12 @@ objc_getClassList(Class *buf, unsigned int count)
 		if (strcmp(classes->data[i]->key, "Protocol") == 0)
 			continue;
 
-		cls = (Class)classes->data[i]->obj;
+		class = (Class)classes->data[i]->object;
 
-		if (cls == Nil || (uintptr_t)cls & 1)
+		if (class == Nil || (uintptr_t)class & 1)
 			continue;
 
-		buf[j++] = cls;
+		buffer[j++] = class;
 	}
 
 	objc_global_mutex_unlock();
@@ -575,23 +585,23 @@ objc_getClassList(Class *buf, unsigned int count)
 }
 
 Class *
-objc_copyClassList(unsigned int *len)
+objc_copyClassList(unsigned int *length)
 {
 	Class *ret;
 	unsigned int count;
 
 	objc_global_mutex_lock();
 
-	if ((ret = malloc((classes_cnt + 1) * sizeof(Class))) == NULL)
+	if ((ret = malloc((classesCount + 1) * sizeof(Class))) == NULL)
 		OBJC_ERROR("Failed to allocate memory for class list!");
 
-	count = objc_getClassList(ret, classes_cnt);
-	OF_ENSURE(count == classes_cnt);
+	count = objc_getClassList(ret, classesCount);
+	OF_ENSURE(count == classesCount);
 
 	ret[count] = Nil;
 
-	if (len != NULL)
-		*len = count;
+	if (length != NULL)
+		*length = count;
 
 	objc_global_mutex_unlock();
 
@@ -599,43 +609,43 @@ objc_copyClassList(unsigned int *len)
 }
 
 bool
-class_isMetaClass(Class cls)
+class_isMetaClass(Class class)
 {
-	if (cls == Nil)
+	if (class == Nil)
 		return false;
 
-	return (cls->info & OBJC_CLASS_INFO_METACLASS);
+	return (class->info & OBJC_CLASS_INFO_METACLASS);
 }
 
 const char *
-class_getName(Class cls)
+class_getName(Class class)
 {
-	if (cls == Nil)
+	if (class == Nil)
 		return "";
 
-	return cls->name;
+	return class->name;
 }
 
 Class
-class_getSuperclass(Class cls)
+class_getSuperclass(Class class)
 {
-	if (cls == Nil)
+	if (class == Nil)
 		return Nil;
 
-	return cls->superclass;
+	return class->superclass;
 }
 
 unsigned long
-class_getInstanceSize(Class cls)
+class_getInstanceSize(Class class)
 {
-	if (cls == Nil)
+	if (class == Nil)
 		return 0;
 
-	return cls->instance_size;
+	return class->instanceSize;
 }
 
 IMP
-class_getMethodImplementation(Class cls, SEL sel)
+class_getMethodImplementation(Class class, SEL selector)
 {
 	/*
 	 * We use a dummy object here so that the normal lookup is used, even
@@ -651,15 +661,15 @@ class_getMethodImplementation(Class cls, SEL sel)
 		Class isa;
 	} dummy;
 
-	if (cls == Nil)
+	if (class == Nil)
 		return NULL;
 
-	dummy.isa = cls;
-	return objc_msg_lookup((id)&dummy, sel);
+	dummy.isa = class;
+	return objc_msg_lookup((id)&dummy, selector);
 }
 
 IMP
-class_getMethodImplementation_stret(Class cls, SEL sel)
+class_getMethodImplementation_stret(Class class, SEL selector)
 {
 	/*
 	 * Same as above, but use objc_msg_lookup_stret instead, so that the
@@ -669,95 +679,101 @@ class_getMethodImplementation_stret(Class cls, SEL sel)
 		Class isa;
 	} dummy;
 
-	if (cls == Nil)
+	if (class == Nil)
 		return NULL;
 
-	dummy.isa = cls;
-	return objc_msg_lookup_stret((id)&dummy, sel);
+	dummy.isa = class;
+	return objc_msg_lookup_stret((id)&dummy, selector);
 }
 
 static struct objc_method *
-get_method(Class cls, SEL sel)
+getMethod(Class class, SEL selector)
 {
-	struct objc_method_list *ml;
-	struct objc_category **cats;
+	struct objc_category **categories;
 
-	if ((cats = objc_categories_for_class(cls)) != NULL) {
-		for (; *cats != NULL; cats++) {
-			if (cls->info & OBJC_CLASS_INFO_METACLASS)
-				ml = (*cats)->class_methods;
-			else
-				ml = (*cats)->instance_methods;
+	if ((categories = objc_categories_for_class(class)) != NULL) {
+		for (; *categories != NULL; categories++) {
+			struct objc_method_list *methodList =
+			    (class->info & OBJC_CLASS_INFO_METACLASS
+			    ? (*categories)->classMethods
+			    : (*categories)->instanceMethods);
 
-			for (; ml != NULL; ml = ml->next)
-				for (unsigned int i = 0; i < ml->count; i++)
-					if (sel_isEqual(
-					    (SEL)&ml->methods[i].sel, sel))
-						return &ml->methods[i];
+			for (; methodList != NULL;
+			    methodList = methodList->next)
+				for (unsigned int i = 0;
+				    i < methodList->count; i++)
+					if (sel_isEqual((SEL)
+					    &methodList->methods[i].selector,
+					    selector))
+						return &methodList->methods[i];
 		}
 	}
 
-	for (ml = cls->methodlist; ml != NULL; ml = ml->next)
-		for (unsigned int i = 0; i < ml->count; i++)
-			if (sel_isEqual((SEL)&ml->methods[i].sel, sel))
-				return &ml->methods[i];
+	for (struct objc_method_list *methodList = class->methodList;
+	    methodList != NULL; methodList = methodList->next)
+		for (unsigned int i = 0; i < methodList->count; i++)
+			if (sel_isEqual((SEL)&methodList->methods[i].selector,
+			    selector))
+				return &methodList->methods[i];
 
 	return NULL;
 }
 
 static void
-add_method(Class cls, SEL sel, IMP imp, const char *types)
+addMethod(Class class, SEL selector, IMP implementation,
+    const char *typeEncoding)
 {
-	struct objc_method_list *ml;
+	struct objc_method_list *methodList;
 
 	/* FIXME: We need a way to free this at objc_exit() */
-	if ((ml = malloc(sizeof(struct objc_method_list))) == NULL)
+	if ((methodList = malloc(sizeof(*methodList))) == NULL)
 		OBJC_ERROR("Not enough memory to replace method!");
 
-	ml->next = cls->methodlist;
-	ml->count = 1;
-	ml->methods[0].sel.uid = sel->uid;
-	ml->methods[0].sel.types = types;
-	ml->methods[0].imp = imp;
+	methodList->next = class->methodList;
+	methodList->count = 1;
+	methodList->methods[0].selector.UID = selector->UID;
+	methodList->methods[0].selector.typeEncoding = typeEncoding;
+	methodList->methods[0].implementation = implementation;
 
-	cls->methodlist = ml;
+	class->methodList = methodList;
 
-	objc_update_dtable(cls);
+	objc_update_dtable(class);
 }
 
 const char *
-class_getMethodTypeEncoding(Class cls, SEL sel)
+class_getMethodTypeEncoding(Class class, SEL selector)
 {
 	struct objc_method *method;
 
-	if (cls == Nil)
+	if (class == Nil)
 		return NULL;
 
 	objc_global_mutex_lock();
 
-	if ((method = get_method(cls, sel)) != NULL) {
-		const char *ret = method->sel.types;
+	if ((method = getMethod(class, selector)) != NULL) {
+		const char *ret = method->selector.typeEncoding;
 		objc_global_mutex_unlock();
 		return ret;
 	}
 
 	objc_global_mutex_unlock();
 
-	if (cls->superclass != Nil)
-		return class_getMethodTypeEncoding(cls->superclass, sel);
+	if (class->superclass != Nil)
+		return class_getMethodTypeEncoding(class->superclass, selector);
 
 	return NULL;
 }
 
 bool
-class_addMethod(Class cls, SEL sel, IMP imp, const char *types)
+class_addMethod(Class class, SEL selector, IMP implementation,
+    const char *typeEncoding)
 {
 	bool ret;
 
 	objc_global_mutex_lock();
 
-	if (get_method(cls, sel) == NULL) {
-		add_method(cls, sel, imp, types);
+	if (getMethod(class, selector) == NULL) {
+		addMethod(class, selector, implementation, typeEncoding);
 		ret = true;
 	} else
 		ret = false;
@@ -768,125 +784,125 @@ class_addMethod(Class cls, SEL sel, IMP imp, const char *types)
 }
 
 IMP
-class_replaceMethod(Class cls, SEL sel, IMP newimp, const char *types)
+class_replaceMethod(Class class, SEL selector, IMP implementation,
+    const char *typeEncoding)
 {
 	struct objc_method *method;
-	IMP oldimp;
+	IMP oldImplementation;
 
 	objc_global_mutex_lock();
 
-	if ((method = get_method(cls, sel)) != NULL) {
-		oldimp = method->imp;
-		method->imp = newimp;
-		objc_update_dtable(cls);
+	if ((method = getMethod(class, selector)) != NULL) {
+		oldImplementation = method->implementation;
+		method->implementation = implementation;
+		objc_update_dtable(class);
 	} else {
-		oldimp = NULL;
-		add_method(cls, sel, newimp, types);
+		oldImplementation = NULL;
+		addMethod(class, selector, implementation, typeEncoding);
 	}
 
 	objc_global_mutex_unlock();
 
-	return oldimp;
+	return oldImplementation;
 }
 
 Class
-object_getClass(id obj_)
+object_getClass(id object_)
 {
-	struct objc_object *obj;
+	struct objc_object *object;
 
-	if (obj_ == nil)
+	if (object_ == nil)
 		return Nil;
 
-	obj = (struct objc_object *)obj_;
+	object = (struct objc_object *)object_;
 
-	return obj->isa;
+	return object->isa;
 }
 
 Class
-object_setClass(id obj_, Class cls)
+object_setClass(id object_, Class class)
 {
-	struct objc_object *obj;
+	struct objc_object *object;
 	Class old;
 
-	if (obj_ == nil)
+	if (object_ == nil)
 		return Nil;
 
-	obj = (struct objc_object *)obj_;
+	object = (struct objc_object *)object_;
 
-	old = obj->isa;
-	obj->isa = cls;
+	old = object->isa;
+	object->isa = class;
 
 	return old;
 }
 
 const char *
-object_getClassName(id obj)
+object_getClassName(id object)
 {
-	return class_getName(object_getClass(obj));
+	return class_getName(object_getClass(object));
 }
 
 static void
-unregister_class(Class rcls)
+unregisterClass(Class class)
 {
-	struct objc_abi_class *cls = (struct objc_abi_class *)rcls;
+	struct objc_abi_class *rawClass = (struct objc_abi_class *)class;
 
-	if ((rcls->info & OBJC_CLASS_INFO_SETUP) &&
-	    rcls->superclass != Nil &&
-	    rcls->superclass->subclass_list != NULL) {
+	if ((class->info & OBJC_CLASS_INFO_SETUP) && class->superclass != Nil &&
+	    class->superclass->subclassList != NULL) {
 		size_t i = SIZE_MAX, count = 0;
 		Class *tmp;
 
-		for (tmp = rcls->superclass->subclass_list;
+		for (tmp = class->superclass->subclassList;
 		    *tmp != Nil; tmp++) {
-			if (*tmp == rcls)
+			if (*tmp == class)
 				i = count;
 
 			count++;
 		}
 
 		if (count > 0 && i < SIZE_MAX) {
-			tmp = rcls->superclass->subclass_list;
+			tmp = class->superclass->subclassList;
 			tmp[i] = tmp[count - 1];
 			tmp[count - 1] = NULL;
 
-			if ((tmp = realloc(rcls->superclass->subclass_list,
+			if ((tmp = realloc(class->superclass->subclassList,
 			    count * sizeof(Class))) != NULL)
-				rcls->superclass->subclass_list = tmp;
+				class->superclass->subclassList = tmp;
 		}
 	}
 
-	if (rcls->subclass_list != NULL) {
-		free(rcls->subclass_list);
-		rcls->subclass_list = NULL;
+	if (class->subclassList != NULL) {
+		free(class->subclassList);
+		class->subclassList = NULL;
 	}
 
-	if (rcls->dtable != NULL && rcls->dtable != empty_dtable)
-		objc_dtable_free(rcls->dtable);
+	if (class->DTable != NULL && class->DTable != emptyDTable)
+		objc_dtable_free(class->DTable);
 
-	rcls->dtable = NULL;
+	class->DTable = NULL;
 
-	if ((rcls->info & OBJC_CLASS_INFO_SETUP) && rcls->superclass != Nil)
-		cls->superclass = rcls->superclass->name;
+	if ((class->info & OBJC_CLASS_INFO_SETUP) && class->superclass != Nil)
+		rawClass->superclass = class->superclass->name;
 
-	rcls->info &= ~OBJC_CLASS_INFO_SETUP;
+	class->info &= ~OBJC_CLASS_INFO_SETUP;
 }
 
 void
-objc_unregister_class(Class cls)
+objc_unregister_class(Class class)
 {
-	while (cls->subclass_list != NULL && cls->subclass_list[0] != Nil)
-		objc_unregister_class(cls->subclass_list[0]);
+	while (class->subclassList != NULL && class->subclassList[0] != Nil)
+		objc_unregister_class(class->subclassList[0]);
 
-	if (cls->info & OBJC_CLASS_INFO_LOADED)
-		call_method(cls, "unload");
+	if (class->info & OBJC_CLASS_INFO_LOADED)
+		callMethod(class, "unload");
 
-	objc_hashtable_delete(classes, cls->name);
+	objc_hashtable_delete(classes, class->name);
 
-	if (strcmp(class_getName(cls), "Protocol") != 0)
-		classes_cnt--;
+	if (strcmp(class_getName(class), "Protocol") != 0)
+		classesCount--;
 
-	unregister_class(cls);
-	unregister_class(cls->isa);
+	unregisterClass(class);
+	unregisterClass(class->isa);
 }
 
 void
@@ -898,12 +914,12 @@ objc_unregister_all_classes(void)
 	for (uint32_t i = 0; i < classes->size; i++) {
 		if (classes->data[i] != NULL &&
 		    classes->data[i] != &objc_deleted_bucket) {
-			void *cls = (Class)classes->data[i]->obj;
+			void *class = (Class)classes->data[i]->object;
 
-			if (cls == Nil || (uintptr_t)cls & 1)
+			if (class == Nil || (uintptr_t)class & 1)
 				continue;
 
-			objc_unregister_class(cls);
+			objc_unregister_class(class);
 
 			/*
 			 * The table might have been resized, so go back to the
@@ -917,15 +933,15 @@ objc_unregister_all_classes(void)
 		}
 	}
 
-	OF_ENSURE(classes_cnt == 0);
+	OF_ENSURE(classesCount == 0);
 
-	if (empty_dtable != NULL) {
-		objc_dtable_free(empty_dtable);
-		empty_dtable = NULL;
+	if (emptyDTable != NULL) {
+		objc_dtable_free(emptyDTable);
+		emptyDTable = NULL;
 	}
 
-	objc_sparsearray_free(fast_path);
-	fast_path = NULL;
+	objc_sparsearray_free(fastPath);
+	fastPath = NULL;
 
 	objc_hashtable_free(classes);
 	classes = NULL;

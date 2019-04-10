@@ -72,11 +72,11 @@ pathToURLPath(OFString *path)
 
 	return path;
 # elif defined(OF_AMIGAOS)
-	OFArray OF_GENERIC(OFString *) *components = [path pathComponents];
+	OFArray OF_GENERIC(OFString *) *components = path.pathComponents;
 	OFMutableString *ret = [OFMutableString string];
 
 	for (OFString *component in components) {
-		if ([component length] == 0)
+		if (component.length == 0)
 			continue;
 
 		if ([component isEqual: @"/"])
@@ -101,7 +101,7 @@ static OFString *
 URLPathToPath(OFString *path)
 {
 # if defined(OF_WINDOWS) || defined(OF_MSDOS)
-	path = [path substringWithRange: of_range(1, [path length] - 1)];
+	path = [path substringWithRange: of_range(1, path.length - 1)];
 	path = [path stringByReplacingOccurrencesOfString: @"/"
 					       withString: @"\\"];
 
@@ -110,10 +110,10 @@ URLPathToPath(OFString *path)
 	OFMutableArray OF_GENERIC(OFString *) *components;
 	size_t count;
 
-	path = [path substringWithRange: of_range(1, [path length] - 1)];
+	path = [path substringWithRange: of_range(1, path.length - 1)];
 	components = [[[path
 	    componentsSeparatedByString: @"/"] mutableCopy] autorelease];
-	count = [components count];
+	count = components.count;
 
 	for (size_t i = 0; i < count; i++) {
 		OFString *component = [components objectAtIndex: i];
@@ -133,7 +133,7 @@ URLPathToPath(OFString *path)
 
 	return [OFString pathWithComponents: components];
 # elif defined(OF_NINTENDO_3DS) || defined(OF_WII)
-	return [path substringWithRange: of_range(1, [path length] - 1)];
+	return [path substringWithRange: of_range(1, path.length - 1)];
 # else
 	return path;
 # endif
@@ -473,10 +473,10 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 		void *pool = objc_autoreleasePoolPush();
 		char *tmp, *tmp2;
 
-		if ((UTF8String2 = of_strdup([string UTF8String])) == NULL)
+		if ((UTF8String2 = of_strdup(string.UTF8String)) == NULL)
 			@throw [OFOutOfMemoryException
 			     exceptionWithRequestedSize:
-			     [string UTF8StringLength]];
+			     string.UTF8StringLength];
 
 		UTF8String = UTF8String2;
 
@@ -542,11 +542,11 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 
 			portString = [OFString stringWithUTF8String: tmp2];
 
-			if ([portString decimalValue] > 65535)
+			if (portString.decimalValue > 65535)
 				@throw [OFInvalidFormatException exception];
 
 			_port = [[OFNumber alloc] initWithUInt16:
-			    (uint16_t)[portString decimalValue]];
+			    (uint16_t)portString.decimalValue];
 		} else
 			_URLEncodedHost = [[OFString alloc]
 			    initWithUTF8String: UTF8String];
@@ -618,10 +618,10 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 		_URLEncodedUser = [URL->_URLEncodedUser copy];
 		_URLEncodedPassword = [URL->_URLEncodedPassword copy];
 
-		if ((UTF8String2 = of_strdup([string UTF8String])) == NULL)
+		if ((UTF8String2 = of_strdup(string.UTF8String)) == NULL)
 			@throw [OFOutOfMemoryException
 			     exceptionWithRequestedSize:
-			     [string UTF8StringLength]];
+			     string.UTF8StringLength];
 
 		UTF8String = UTF8String2;
 
@@ -647,19 +647,36 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 			_URLEncodedPath = [[OFString alloc]
 			    initWithUTF8String: UTF8String];
 		else {
-			OFString *path, *s;
-
-			path = [OFString stringWithUTF8String: UTF8String];
+			OFString *relativePath =
+			    [OFString stringWithUTF8String: UTF8String];
 
 			if ([URL->_URLEncodedPath hasSuffix: @"/"])
-				s = [URL->_URLEncodedPath
-				    stringByAppendingString: path];
-			else
-				s = [OFString stringWithFormat:
-				    @"%@/../%@", URL->_URLEncodedPath, path];
+				_URLEncodedPath = [[URL->_URLEncodedPath
+				    stringByAppendingString: relativePath]
+				    copy];
+			else {
+				OFMutableString *path = [OFMutableString
+				    stringWithString:
+				    (URL->_URLEncodedPath != nil
+				    ? URL->_URLEncodedPath
+				    : @"/")];
+				of_range_t range = [path
+				    rangeOfString: @"/"
+					  options: OF_STRING_SEARCH_BACKWARDS];
 
-			_URLEncodedPath =
-			    [[s stringByStandardizingURLPath] copy];
+				if (range.location == OF_NOT_FOUND)
+					@throw [OFInvalidFormatException
+					    exception];
+
+				range.location++;
+				range.length = path.length - range.location;
+
+				[path replaceCharactersInRange: range
+						    withString: relativePath];
+				[path makeImmutable];
+
+				_URLEncodedPath = [path copy];
+			}
 		}
 
 		of_url_verify_escaped(_URLEncodedPath,
@@ -717,14 +734,30 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 	@try {
 		void *pool = objc_autoreleasePoolPush();
 
-		if (![path isAbsolutePath]) {
-			OFString *currentDirectoryPath = [[OFFileManager
-			    defaultManager] currentDirectoryPath];
+		if (!path.absolutePath) {
+			OFString *currentDirectoryPath = [OFFileManager
+			    defaultManager].currentDirectoryPath;
 
 			path = [currentDirectoryPath
 			    stringByAppendingPathComponent: path];
-			path = [path stringByStandardizingPath];
+			path = path.stringByStandardizingPath;
 		}
+
+#ifdef OF_WINDOWS
+		if ([path hasPrefix: @"\\\\"]) {
+			OFArray *components = path.pathComponents;
+
+			if (components.count < 2)
+				@throw [OFInvalidFormatException exception];
+
+			_URLEncodedHost = [[[components objectAtIndex: 1]
+			    stringByURLEncodingWithAllowedCharacters:
+			    [OFCharacterSet URLHostAllowedCharacterSet]] copy];
+			path = [OFString pathWithComponents:
+			    [components objectsInRange:
+			    of_range(2, components.count - 2)]];
+		}
+#endif
 
 		path = pathToURLPath(path);
 
@@ -752,11 +785,11 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 	OFString *stringValue;
 
 	@try {
-		if (![[element name] isEqual: [self className]] ||
-		    ![[element namespace] isEqual: OF_SERIALIZATION_NS])
+		if (![element.name isEqual: self.className] ||
+		    ![element.namespace isEqual: OF_SERIALIZATION_NS])
 			@throw [OFInvalidArgumentException exception];
 
-		stringValue = [element stringValue];
+		stringValue = element.stringValue;
 	} @catch (id e) {
 		[self release];
 		@throw e;
@@ -828,14 +861,14 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 
 	OF_HASH_INIT(hash);
 
-	OF_HASH_ADD_HASH(hash, [_URLEncodedScheme hash]);
-	OF_HASH_ADD_HASH(hash, [_URLEncodedHost hash]);
-	OF_HASH_ADD_HASH(hash, [_port hash]);
-	OF_HASH_ADD_HASH(hash, [_URLEncodedUser hash]);
-	OF_HASH_ADD_HASH(hash, [_URLEncodedPassword hash]);
-	OF_HASH_ADD_HASH(hash, [_URLEncodedPath hash]);
-	OF_HASH_ADD_HASH(hash, [_URLEncodedQuery hash]);
-	OF_HASH_ADD_HASH(hash, [_URLEncodedFragment hash]);
+	OF_HASH_ADD_HASH(hash, _URLEncodedScheme.hash);
+	OF_HASH_ADD_HASH(hash, _URLEncodedHost.hash);
+	OF_HASH_ADD_HASH(hash, _port.hash);
+	OF_HASH_ADD_HASH(hash, _URLEncodedUser.hash);
+	OF_HASH_ADD_HASH(hash, _URLEncodedPassword.hash);
+	OF_HASH_ADD_HASH(hash, _URLEncodedPath.hash);
+	OF_HASH_ADD_HASH(hash, _URLEncodedQuery.hash);
+	OF_HASH_ADD_HASH(hash, _URLEncodedFragment.hash);
 
 	OF_HASH_FINALIZE(hash);
 
@@ -844,7 +877,7 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 
 - (OFString *)scheme
 {
-	return [_URLEncodedScheme stringByURLDecoding];
+	return _URLEncodedScheme.stringByURLDecoding;
 }
 
 - (OFString *)URLEncodedScheme
@@ -854,7 +887,7 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 
 - (OFString *)host
 {
-	return [_URLEncodedHost stringByURLDecoding];
+	return _URLEncodedHost.stringByURLDecoding;
 }
 
 - (OFString *)URLEncodedHost
@@ -869,7 +902,7 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 
 - (OFString *)user
 {
-	return [_URLEncodedUser stringByURLDecoding];
+	return _URLEncodedUser.stringByURLDecoding;
 }
 
 - (OFString *)URLEncodedUser
@@ -879,7 +912,7 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 
 - (OFString *)password
 {
-	return [_URLEncodedPassword stringByURLDecoding];
+	return _URLEncodedPassword.stringByURLDecoding;
 }
 
 - (OFString *)URLEncodedPassword
@@ -889,7 +922,7 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 
 - (OFString *)path
 {
-	return [_URLEncodedPath stringByURLDecoding];
+	return _URLEncodedPath.stringByURLDecoding;
 }
 
 - (OFString *)URLEncodedPath
@@ -899,35 +932,72 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 
 - (OFArray *)pathComponents
 {
-	return [[self path] componentsSeparatedByString: @"/"];
+	void *pool = objc_autoreleasePoolPush();
+	OFMutableArray *ret;
+	size_t count;
+
+#if defined(OF_WINDOWS) || defined(OF_MSDOS)
+	if ([_URLEncodedScheme isEqual: @"file"]) {
+		OFString *path = [_URLEncodedPath substringWithRange:
+		    of_range(1, _URLEncodedPath.length - 1)];
+		path = [path stringByReplacingOccurrencesOfString: @"/"
+						       withString: @"\\"];
+		ret = [[path.pathComponents mutableCopy] autorelease];
+		[ret insertObject: @"/"
+			  atIndex: 0];
+	} else
+#endif
+		ret = [[[_URLEncodedPath componentsSeparatedByString: @"/"]
+		    mutableCopy] autorelease];
+
+	count = ret.count;
+
+	if (count > 0 && [ret.firstObject length] == 0)
+		[ret replaceObjectAtIndex: 0
+			       withObject: @"/"];
+
+	for (size_t i = 0; i < count; i++) {
+		OFString *component = [ret objectAtIndex: i];
+#if defined(OF_WINDOWS) || defined(OF_MSDOS)
+		component = [component
+		    stringByReplacingOccurrencesOfString: @"\\"
+					      withString: @"/"];
+#endif
+		[ret replaceObjectAtIndex: i
+			       withObject: component.stringByURLDecoding];
+	}
+
+	[ret makeImmutable];
+	[ret retain];
+
+	objc_autoreleasePoolPop(pool);
+
+	return [ret autorelease];
 }
 
 - (OFString *)lastPathComponent
 {
 	void *pool = objc_autoreleasePoolPush();
-	OFString *path = [self path];
+	OFString *path = _URLEncodedPath;
 	const char *UTF8String, *lastComponent;
 	size_t length;
 	OFString *ret;
 
 	if (path == nil) {
 		objc_autoreleasePoolPop(pool);
-
 		return nil;
 	}
 
 	if ([path isEqual: @"/"]) {
 		objc_autoreleasePoolPop(pool);
-
-		return @"";
+		return @"/";
 	}
 
 	if ([path hasSuffix: @"/"])
-		path = [path substringWithRange:
-		    of_range(0, [path length] - 1)];
+		path = [path substringWithRange: of_range(0, path.length - 1)];
 
-	UTF8String = lastComponent = [path UTF8String];
-	length = [path UTF8StringLength];
+	UTF8String = lastComponent = path.UTF8String;
+	length = path.UTF8StringLength;
 
 	for (size_t i = 1; i <= length; i++) {
 		if (UTF8String[length - i] == '/') {
@@ -936,9 +1006,10 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 		}
 	}
 
-	ret = [[OFString alloc]
-	    initWithUTF8String: lastComponent
-			length: length - (lastComponent - UTF8String)];
+	ret = [OFString
+	    stringWithUTF8String: lastComponent
+			  length: length - (lastComponent - UTF8String)];
+	ret = [ret.stringByURLDecoding retain];
 
 	objc_autoreleasePoolPop(pool);
 
@@ -947,7 +1018,7 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 
 - (OFString *)query
 {
-	return [_URLEncodedQuery stringByURLDecoding];
+	return _URLEncodedQuery.stringByURLDecoding;
 }
 
 - (OFString *)URLEncodedQuery
@@ -957,7 +1028,7 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 
 - (OFString *)fragment
 {
-	return [_URLEncodedFragment stringByURLDecoding];
+	return _URLEncodedFragment.stringByURLDecoding;
 }
 
 - (OFString *)URLEncodedFragment
@@ -977,7 +1048,7 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 	@try {
 		copy->_URLEncodedScheme = [_URLEncodedScheme copy];
 		copy->_URLEncodedHost = [_URLEncodedHost copy];
-		copy->_port = _port;
+		copy->_port = [_port copy];
 		copy->_URLEncodedUser = [_URLEncodedUser copy];
 		copy->_URLEncodedPassword = [_URLEncodedPassword copy];
 		copy->_URLEncodedPath = [_URLEncodedPath copy];
@@ -1038,13 +1109,28 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 	if (![_URLEncodedPath hasPrefix: @"/"])
 		@throw [OFInvalidFormatException exception];
 
-	path = [self path];
+	path = self.path;
 
-	if ([path hasSuffix: @"/"])
-		path = [path substringWithRange:
-		    of_range(0, [path length] - 1)];
+#if !defined(OF_WINDOWS) && !defined(OF_MSDOS)
+	if (path.length > 1 && [path hasSuffix: @"/"])
+#else
+	if (path.length > 1 && [path hasSuffix: @"/"] &&
+	    ![path hasSuffix: @":/"])
+#endif
+		path = [path substringWithRange: of_range(0, path.length - 1)];
 
 	path = URLPathToPath(path);
+
+#ifdef OF_WINDOWS
+	if (_URLEncodedHost != nil) {
+		if (path.length == 0)
+			path = [OFString stringWithFormat: @"\\\\%@",
+							   self.host];
+		else
+			path = [OFString stringWithFormat: @"\\\\%@\\%@",
+							   self.host, path];
+	}
+#endif
 
 	[path retain];
 
@@ -1054,78 +1140,42 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 }
 #endif
 
-- (OFMutableURL *)of_URLByAppendingPathComponent: (OFString *)component
-{
-	OFMutableURL *ret = [[self mutableCopy] autorelease];
-	void *pool;
-	OFMutableString *URLEncodedPath;
-
-	if ([component hasPrefix: @"/"]) {
-		[ret setPath: component];
-		return ret;
-	}
-
-	pool = objc_autoreleasePoolPush();
-	URLEncodedPath = [[[self URLEncodedPath] mutableCopy] autorelease];
-
-	if (![URLEncodedPath hasSuffix: @"/"])
-		[URLEncodedPath appendString: @"/"];
-
-	[URLEncodedPath appendString:
-	    [component stringByURLEncodingWithAllowedCharacters:
-	    [OFCharacterSet URLPathAllowedCharacterSet]]];
-
-	[ret setURLEncodedPath: URLEncodedPath];
-
-	objc_autoreleasePoolPop(pool);
-
-	return ret;
-}
-
 - (OFURL *)URLByAppendingPathComponent: (OFString *)component
 {
-	OFMutableURL *ret = [self of_URLByAppendingPathComponent: component];
+	OFMutableURL *URL = [[self mutableCopy] autorelease];
 
-#ifdef OF_HAVE_FILES
-	if ([[ret scheme] isEqual: @"file"]) {
-		void *pool = objc_autoreleasePoolPush();
+	[URL appendPathComponent: component];
+	[URL makeImmutable];
 
-		if ([[OFFileManager defaultManager] directoryExistsAtURL: ret])
-			[ret setURLEncodedPath: [[ret URLEncodedPath]
-			    stringByAppendingString: @"/"]];
-
-		objc_autoreleasePoolPop(pool);
-	}
-#endif
-
-	[ret makeImmutable];
-
-	return ret;
+	return URL;
 }
 
 - (OFURL *)URLByAppendingPathComponent: (OFString *)component
 			   isDirectory: (bool)isDirectory
 {
-	OFMutableURL *ret = [self of_URLByAppendingPathComponent: component];
+	OFMutableURL *URL = [[self mutableCopy] autorelease];
 
-	if (isDirectory) {
-		void *pool = objc_autoreleasePoolPush();
+	[URL appendPathComponent: component
+		     isDirectory: isDirectory];
+	[URL makeImmutable];
 
-		[ret setURLEncodedPath:
-		    [[ret URLEncodedPath] stringByAppendingString: @"/"]];
+	return URL;
+}
 
-		objc_autoreleasePoolPop(pool);
-	}
+- (OFURL *)URLByStandardizingPath
+{
+	OFMutableURL *URL = [[self mutableCopy] autorelease];
 
-	[ret makeImmutable];
+	[URL standardizePath];
+	[URL makeImmutable];
 
-	return ret;
+	return URL;
 }
 
 - (OFString *)description
 {
 	return [OFString stringWithFormat: @"<%@: %@>",
-					   [self class], [self string]];
+					   self.class, self.string];
 }
 
 - (OFXMLElement *)XMLElementBySerializing
@@ -1133,9 +1183,9 @@ of_url_verify_escaped(OFString *string, OFCharacterSet *characterSet)
 	void *pool = objc_autoreleasePoolPush();
 	OFXMLElement *element;
 
-	element = [OFXMLElement elementWithName: [self className]
+	element = [OFXMLElement elementWithName: self.className
 				      namespace: OF_SERIALIZATION_NS
-				    stringValue: [self string]];
+				    stringValue: self.string];
 
 	[element retain];
 

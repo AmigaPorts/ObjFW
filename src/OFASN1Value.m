@@ -40,11 +40,6 @@
 	    DEREncodedContents: DEREncodedContents] autorelease];
 }
 
-- (instancetype)init
-{
-	OF_INVALID_INIT_METHOD
-}
-
 - (instancetype)initWithTagClass: (of_asn1_tag_class_t)tagClass
 		       tagNumber: (of_asn1_tag_number_t)tagNumber
 		     constructed: (bool)constructed
@@ -53,7 +48,7 @@
 	self = [super init];
 
 	@try {
-		if ([DEREncodedContents itemSize] != 1)
+		if (DEREncodedContents.itemSize != 1)
 			@throw [OFInvalidFormatException exception];
 
 		_tagClass = tagClass;
@@ -66,6 +61,11 @@
 	}
 
 	return self;
+}
+
+- (instancetype)init
+{
+	OF_INVALID_INIT_METHOD
 }
 
 - (void)dealloc
@@ -105,7 +105,7 @@
 	OF_HASH_ADD(hash, _tagClass & 0xFF);
 	OF_HASH_ADD(hash, _tagNumber & 0xFF);
 	OF_HASH_ADD(hash, _constructed);
-	OF_HASH_ADD_HASH(hash, [_DEREncodedContents hash]);
+	OF_HASH_ADD_HASH(hash, _DEREncodedContents.hash);
 
 	OF_HASH_FINALIZE(hash);
 
@@ -122,6 +122,6 @@
 	    @"\tDER-encoded contents = %@\n"
 	    @">",
 	    _tagClass, _tagNumber, _constructed,
-	    [_DEREncodedContents description]];
+	    _DEREncodedContents.description];
 }
 @end

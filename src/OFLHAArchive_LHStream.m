@@ -20,6 +20,7 @@
 #include <assert.h>
 
 #import "OFLHAArchive_LHStream.h"
+#import "OFKernelEventObserver.h"
 
 #import "huffman_tree.h"
 
@@ -43,7 +44,7 @@ enum state {
 	STATE_BLOCK_LEN_DIST_PAIR
 };
 
-static bool
+static OF_INLINE bool
 tryReadBits(OFLHAArchive_LHStream *stream, uint16_t *bits, uint8_t count)
 {
 	uint16_t ret = stream->_savedBits;
@@ -52,7 +53,8 @@ tryReadBits(OFLHAArchive_LHStream *stream, uint16_t *bits, uint8_t count)
 
 	for (uint_fast8_t i = stream->_savedBitsLength; i < count; i++) {
 		if OF_UNLIKELY (stream->_bitIndex == 8) {
-			if (stream->_bufferIndex < stream->_bufferLength)
+			if OF_LIKELY (stream->_bufferIndex <
+			    stream->_bufferLength)
 				stream->_byte =
 				    stream->_buffer[stream->_bufferIndex++];
 			else {
@@ -90,7 +92,7 @@ tryReadBits(OFLHAArchive_LHStream *stream, uint16_t *bits, uint8_t count)
 }
 
 @implementation OFLHAArchive_LHStream
-- (instancetype)of_initWithStream: (OF_KINDOF(OFStream *))stream
+- (instancetype)of_initWithStream: (OFStream *)stream
 		     distanceBits: (uint8_t)distanceBits
 		   dictionaryBits: (uint8_t)dictionaryBits
 {
@@ -141,7 +143,7 @@ tryReadBits(OFLHAArchive_LHStream *stream, uint16_t *bits, uint8_t count)
 	if (_stream == nil)
 		@throw [OFNotOpenException exceptionWithObject: self];
 
-	if ([_stream isAtEndOfStream] && _bufferLength - _bufferIndex == 0 &&
+	if (_stream.atEndOfStream && _bufferLength - _bufferIndex == 0 &&
 	    _state == STATE_BLOCK_HEADER)
 		return 0;
 
@@ -494,18 +496,19 @@ start:
 	if (_stream == nil)
 		@throw [OFNotOpenException exceptionWithObject: self];
 
-	return ([_stream isAtEndOfStream] &&
+	return (_stream.atEndOfStream &&
 	    _bufferLength - _bufferIndex == 0 && _state == STATE_BLOCK_HEADER);
 }
 
 - (int)fileDescriptorForReading
 {
-	return [_stream fileDescriptorForReading];
+	return ((id <OFReadyForReadingObserving>)_stream)
+	    .fileDescriptorForReading;
 }
 
 - (bool)hasDataInReadBuffer
 {
-	return ([super hasDataInReadBuffer] || [_stream hasDataInReadBuffer] ||
+	return (super.hasDataInReadBuffer || _stream.hasDataInReadBuffer ||
 	    _bufferLength - _bufferIndex > 0);
 }
 

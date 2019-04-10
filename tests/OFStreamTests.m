@@ -17,13 +17,6 @@
 
 #include "config.h"
 
-#include <string.h>
-
-#import "OFStream.h"
-#import "OFString.h"
-#import "OFSystemInfo.h"
-#import "OFAutoreleasePool.h"
-
 #import "TestsAppDelegate.h"
 
 static OFString *module = @"OFStream";
@@ -83,8 +76,8 @@ static OFString *module = @"OFStream";
 	cstr[pageSize - 3] = '\0';
 
 	TEST(@"-[readLine]", [[t readLine] isEqual: @"foo"] &&
-	    [(str = [t readLine]) length] == pageSize - 3 &&
-	    !strcmp([str UTF8String], cstr))
+	    (str = [t readLine]).length == pageSize - 3 &&
+	    !strcmp(str.UTF8String, cstr))
 
 	[pool drain];
 }

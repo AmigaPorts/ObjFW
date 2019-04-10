@@ -102,7 +102,7 @@ OF_ASSUME_NONNULL_BEGIN
 /*!
  * @brief The path of the URL split into components.
  *
- * The first component must always be empty to designate the root.
+ * The first component must always be `/` to designate the root.
  */
 @property OF_NULLABLE_PROPERTY (readonly, copy, nonatomic)
     OFArray OF_GENERIC(OFString *) *pathComponents;
@@ -141,6 +141,11 @@ OF_ASSUME_NONNULL_BEGIN
  * @brief The URL as a string.
  */
 @property (readonly, nonatomic) OFString *string;
+
+/*!
+ * @brief The URL with relative sub paths resolved.
+ */
+@property (readonly, nonatomic) OFURL *URLByStandardizingPath;
 
 #ifdef OF_HAVE_FILES
 /*!

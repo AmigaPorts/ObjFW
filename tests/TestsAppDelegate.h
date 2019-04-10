@@ -15,8 +15,7 @@
  * file.
  */
 
-#import "OFApplication.h"
-#import "OFXMLElementBuilder.h"
+#import "ObjFW.h"
 
 #define TEST(test, ...)					\
 	{						\
@@ -89,6 +88,10 @@ enum {
 
 @interface TestsAppDelegate (OFASN1DERValueTests)
 - (void)ASN1DERValueTests;
+@end
+
+@interface TestsAppDelegate (OFASN1DEREncodedValueTests)
+- (void)ASN1DEREncodedValueTests;
 @end
 
 @interface TestsAppDelegate (OFArrayTests)
@@ -257,6 +260,10 @@ enum {
 
 @interface TestsAppDelegate (OFValueTests)
 - (void)valueTests;
+@end
+
+@interface TestsAppDelegate (OFWindowsRegistryKeyTests)
+- (void)windowsRegistryKeyTests;
 @end
 
 @interface TestsAppDelegate (OFXMLElementBuilderTests)

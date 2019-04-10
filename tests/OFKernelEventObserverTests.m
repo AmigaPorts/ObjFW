@@ -17,12 +17,6 @@
 
 #include "config.h"
 
-#import "OFKernelEventObserver.h"
-#import "OFString.h"
-#import "OFDate.h"
-#import "OFTCPSocket.h"
-#import "OFAutoreleasePool.h"
-
 #ifdef HAVE_KQUEUE
 # import "OFKernelEventObserver_kqueue.h"
 #endif
@@ -103,7 +97,7 @@ static OFString *module;
 
 	deadline = [OFDate dateWithTimeIntervalSinceNow: 1];
 	while (_events < EXPECTED_EVENTS) {
-		if ([deadline timeIntervalSinceNow] < 0) {
+		if (deadline.timeIntervalSinceNow < 0) {
 			deadlineExceeded = true;
 			break;
 		}
@@ -212,7 +206,7 @@ static OFString *module;
 	    initWithTestsAppDelegate: self] autorelease];
 
 	TEST(@"+[observer]", (test->_observer = [class observer]))
-	[test->_observer setDelegate: test];
+	test->_observer.delegate = test;
 
 	TEST(@"-[addObjectForReading:]",
 	    R([test->_observer addObjectForReading: test->_server]))

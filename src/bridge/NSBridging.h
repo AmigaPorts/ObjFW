@@ -35,14 +35,12 @@ OF_ASSUME_NONNULL_BEGIN
  */
 @protocol NSBridging
 /*!
- * @brief Returns an instance of an ObjFW object corresponding to the receiver.
+ * @brief An instance of an ObjFW object corresponding to the object.
  *
  * If possible, the original object is wrapped. If this is not possible, an
  * autoreleased copy is created.
- *
- * @return The receiver as an ObjFW object
  */
-- (id)OFObject;
+@property (readonly, nonatomic) id OFObject;
 @end
 
 OF_ASSUME_NONNULL_END

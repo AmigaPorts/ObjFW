@@ -29,9 +29,32 @@
 @synthesize bitStringValue = _bitStringValue;
 @synthesize bitStringLength = _bitStringLength;
 
-- (instancetype)init
++ (instancetype)bitStringWithBitStringValue: (OFData *)bitStringValue
+			    bitStringLength: (size_t)bitStringLength
 {
-	OF_INVALID_INIT_METHOD
+	return [[[self alloc]
+	    initWithBitStringValue: bitStringValue
+		   bitStringLength: bitStringLength] autorelease];
+}
+
+- (instancetype)initWithBitStringValue: (OFData *)bitStringValue
+		       bitStringLength: (size_t)bitStringLength
+{
+	self = [super init];
+
+	@try {
+		if (bitStringValue.count * bitStringValue.itemSize !=
+		    bitStringLength / 8)
+			@throw [OFInvalidFormatException exception];
+
+		_bitStringValue = [bitStringValue copy];
+		_bitStringLength = bitStringLength;
+	} @catch (id e) {
+		[self release];
+		@throw e;
+	}
+
+	return self;
 }
 
 - (instancetype)initWithTagClass: (of_asn1_tag_class_t)tagClass
@@ -39,18 +62,19 @@
 		     constructed: (bool)constructed
 	      DEREncodedContents: (OFData *)DEREncodedContents
 {
-	self = [super init];
+	void *pool = objc_autoreleasePoolPush();
+	OFData *bitStringValue;
+	size_t bitStringLength;
 
 	@try {
-		void *pool = objc_autoreleasePoolPush();
 		unsigned char lastByteBits;
-		size_t count = [DEREncodedContents count];
+		size_t count = DEREncodedContents.count;
 
 		if (tagClass != OF_ASN1_TAG_CLASS_UNIVERSAL ||
 		    tagNumber != OF_ASN1_TAG_NUMBER_BIT_STRING || constructed)
 			@throw [OFInvalidArgumentException exception];
 
-		if ([DEREncodedContents itemSize] != 1 || count == 0)
+		if (DEREncodedContents.itemSize != 1 || count == 0)
 			@throw [OFInvalidFormatException exception];
 
 		lastByteBits =
@@ -63,17 +87,25 @@
 		    SIZE_MAX - (count - 1) * 8 < lastByteBits)
 			@throw [OFOutOfRangeException exception];
 
-		_bitStringLength = (count - 1) * 8 + lastByteBits;
-		_bitStringValue = [[DEREncodedContents
+		bitStringLength = (count - 1) * 8 + lastByteBits;
+		bitStringValue = [[DEREncodedContents
 		    subdataWithRange: of_range(1, count - 1)] copy];
-
-		objc_autoreleasePoolPop(pool);
 	} @catch (id e) {
 		[self release];
 		@throw e;
 	}
 
+	self = [self initWithBitStringValue: bitStringValue
+			    bitStringLength: bitStringLength];
+
+	objc_autoreleasePoolPop(pool);
+
 	return self;
+}
+
+- (instancetype)init
+{
+	OF_INVALID_INIT_METHOD
 }
 
 - (void)dealloc
@@ -102,7 +134,7 @@
 
 - (uint32_t)hash
 {
-	return [_bitStringValue hash] + (uint32_t)_bitStringLength;
+	return _bitStringValue.hash + (uint32_t)_bitStringLength;
 }
 
 - (OFString *)description

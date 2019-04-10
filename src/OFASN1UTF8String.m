@@ -26,9 +26,23 @@
 @implementation OFASN1UTF8String
 @synthesize UTF8StringValue = _UTF8StringValue;
 
-- (instancetype)init
++ (instancetype)stringWithStringValue: (OFString *)stringValue
 {
-	OF_INVALID_INIT_METHOD
+	return [[[self alloc] initWithStringValue: stringValue] autorelease];
+}
+
+- (instancetype)initWithStringValue: (OFString *)stringValue
+{
+	self = [super init];
+
+	@try {
+		_UTF8StringValue = [stringValue copy];
+	} @catch (id e) {
+		[self release];
+		@throw e;
+	}
+
+	return self;
 }
 
 - (instancetype)initWithTagClass: (of_asn1_tag_class_t)tagClass
@@ -36,25 +50,35 @@
 		     constructed: (bool)constructed
 	      DEREncodedContents: (OFData *)DEREncodedContents
 {
-	self = [super init];
+	void *pool = objc_autoreleasePoolPush();
+	OFString *UTF8StringValue;
 
 	@try {
 		if (tagClass != OF_ASN1_TAG_CLASS_UNIVERSAL ||
 		    tagNumber != OF_ASN1_TAG_NUMBER_UTF8_STRING || constructed)
 			@throw [OFInvalidArgumentException exception];
 
-		if ([DEREncodedContents itemSize] != 1)
+		if (DEREncodedContents.itemSize != 1)
 			@throw [OFInvalidArgumentException exception];
 
-		_UTF8StringValue = [[OFString alloc]
-		    initWithUTF8String: [DEREncodedContents items]
-				length: [DEREncodedContents count]];
+		UTF8StringValue = [OFString
+		    stringWithUTF8String: DEREncodedContents.items
+				  length: DEREncodedContents.count];
 	} @catch (id e) {
 		[self release];
 		@throw e;
 	}
 
+	self = [self initWithStringValue: UTF8StringValue];
+
+	objc_autoreleasePoolPop(pool);
+
 	return self;
+}
+
+- (instancetype)init
+{
+	OF_INVALID_INIT_METHOD
 }
 
 - (void)dealloc
@@ -66,7 +90,7 @@
 
 - (OFString *)stringValue
 {
-	return [self UTF8StringValue];
+	return self.UTF8StringValue;
 }
 
 - (bool)isEqual: (id)object
@@ -86,7 +110,7 @@
 
 - (uint32_t)hash
 {
-	return [_UTF8StringValue hash];
+	return _UTF8StringValue.hash;
 }
 
 - (OFString *)description

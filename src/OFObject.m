@@ -144,9 +144,9 @@ enumerationMutationHandler(id object)
 }
 
 void OF_NO_RETURN_FUNC
-of_method_not_found(id obj, SEL sel)
+of_method_not_found(id object, SEL selector)
 {
-	[obj doesNotRecognizeSelector: sel];
+	[object doesNotRecognizeSelector: selector];
 
 	/*
 	 * Just in case doesNotRecognizeSelector: returned, even though it must
@@ -158,9 +158,9 @@ of_method_not_found(id obj, SEL sel)
 }
 
 void OF_NO_RETURN_FUNC
-of_method_not_found_stret(void *st, id obj, SEL sel)
+of_method_not_found_stret(void *stret, id object, SEL selector)
 {
-	of_method_not_found(obj, sel);
+	of_method_not_found(object, selector);
 }
 
 id
@@ -365,11 +365,11 @@ _references_to_categories_of_OFObject(void)
 		return;
 
 #if defined(OF_OBJFW_RUNTIME)
-	for (struct objc_method_list *methodlist =
-	    object_getClass(class)->methodlist;
-	    methodlist != NULL; methodlist = methodlist->next) {
-		for (unsigned int i = 0; i < methodlist->count; i++) {
-			SEL selector = (SEL)&methodlist->methods[i].sel;
+	for (struct objc_method_list *methodList =
+	    object_getClass(class)->methodList;
+	    methodList != NULL; methodList = methodList->next) {
+		for (unsigned int i = 0; i < methodList->count; i++) {
+			SEL selector = (SEL)&methodList->methods[i].selector;
 
 			/*
 			 * Don't replace methods implemented in the receiving
@@ -384,10 +384,10 @@ _references_to_categories_of_OFObject(void)
 		}
 	}
 
-	for (struct objc_method_list *methodlist = class->methodlist;
-	    methodlist != NULL; methodlist = methodlist->next) {
-		for (unsigned int i = 0; i < methodlist->count; i++) {
-			SEL selector = (SEL)&methodlist->methods[i].sel;
+	for (struct objc_method_list *methodList = class->methodList;
+	    methodList != NULL; methodList = methodList->next) {
+		for (unsigned int i = 0; i < methodList->count; i++) {
+			SEL selector = (SEL)&methodList->methods[i].selector;
 
 			/*
 			 * Don't replace methods implemented in the receiving
@@ -676,7 +676,7 @@ _references_to_categories_of_OFObject(void)
 						 target: self
 					       selector: selector
 						repeats: false];
-	[[thread runLoop] addTimer: timer];
+	[thread.runLoop addTimer: timer];
 
 	if (waitUntilDone)
 		[timer waitUntilDone];
@@ -695,7 +695,7 @@ _references_to_categories_of_OFObject(void)
 					       selector: selector
 						 object: object
 						repeats: false];
-	[[thread runLoop] addTimer: timer];
+	[thread.runLoop addTimer: timer];
 
 	if (waitUntilDone)
 		[timer waitUntilDone];
@@ -716,7 +716,7 @@ _references_to_categories_of_OFObject(void)
 						 object: object1
 						 object: object2
 						repeats: false];
-	[[thread runLoop] addTimer: timer];
+	[thread.runLoop addTimer: timer];
 
 	if (waitUntilDone)
 		[timer waitUntilDone];
@@ -739,7 +739,7 @@ _references_to_categories_of_OFObject(void)
 						 object: object2
 						 object: object3
 						repeats: false];
-	[[thread runLoop] addTimer: timer];
+	[thread.runLoop addTimer: timer];
 
 	if (waitUntilDone)
 		[timer waitUntilDone];
@@ -764,7 +764,7 @@ _references_to_categories_of_OFObject(void)
 						 object: object3
 						 object: object4
 						repeats: false];
-	[[thread runLoop] addTimer: timer];
+	[thread.runLoop addTimer: timer];
 
 	if (waitUntilDone)
 		[timer waitUntilDone];
@@ -878,10 +878,10 @@ _references_to_categories_of_OFObject(void)
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	[[thread runLoop] addTimer: [OFTimer timerWithTimeInterval: delay
-							    target: self
-							  selector: selector
-							   repeats: false]];
+	[thread.runLoop addTimer: [OFTimer timerWithTimeInterval: delay
+							  target: self
+							selector: selector
+							 repeats: false]];
 
 	objc_autoreleasePoolPop(pool);
 }
@@ -893,11 +893,11 @@ _references_to_categories_of_OFObject(void)
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	[[thread runLoop] addTimer: [OFTimer timerWithTimeInterval: delay
-							    target: self
-							  selector: selector
-							    object: object
-							   repeats: false]];
+	[thread.runLoop addTimer: [OFTimer timerWithTimeInterval: delay
+							  target: self
+							selector: selector
+							  object: object
+							 repeats: false]];
 
 	objc_autoreleasePoolPop(pool);
 }
@@ -910,12 +910,12 @@ _references_to_categories_of_OFObject(void)
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	[[thread runLoop] addTimer: [OFTimer timerWithTimeInterval: delay
-							    target: self
-							  selector: selector
-							    object: object1
-							    object: object2
-							   repeats: false]];
+	[thread.runLoop addTimer: [OFTimer timerWithTimeInterval: delay
+							  target: self
+							selector: selector
+							  object: object1
+							  object: object2
+							 repeats: false]];
 
 	objc_autoreleasePoolPop(pool);
 }
@@ -929,13 +929,13 @@ _references_to_categories_of_OFObject(void)
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	[[thread runLoop] addTimer: [OFTimer timerWithTimeInterval: delay
-							    target: self
-							  selector: selector
-							    object: object1
-							    object: object2
-							    object: object3
-							   repeats: false]];
+	[thread.runLoop addTimer: [OFTimer timerWithTimeInterval: delay
+							  target: self
+							selector: selector
+							  object: object1
+							  object: object2
+							  object: object3
+							 repeats: false]];
 
 	objc_autoreleasePoolPop(pool);
 }
@@ -950,14 +950,14 @@ _references_to_categories_of_OFObject(void)
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	[[thread runLoop] addTimer: [OFTimer timerWithTimeInterval: delay
-							    target: self
-							  selector: selector
-							    object: object1
-							    object: object2
-							    object: object3
-							    object: object4
-							   repeats: false]];
+	[thread.runLoop addTimer: [OFTimer timerWithTimeInterval: delay
+							  target: self
+							selector: selector
+							  object: object1
+							  object: object2
+							  object: object3
+							  object: object4
+							 repeats: false]];
 
 	objc_autoreleasePoolPop(pool);
 }
@@ -1000,7 +1000,7 @@ _references_to_categories_of_OFObject(void)
 {
 	/* Classes containing data should reimplement this! */
 
-	return [OFString stringWithFormat: @"<%@>", [self className]];
+	return [OFString stringWithFormat: @"<%@>", self.className];
 }
 
 - (void *)allocMemoryWithSize: (size_t)size

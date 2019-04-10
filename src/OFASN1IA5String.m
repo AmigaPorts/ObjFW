@@ -26,9 +26,23 @@
 @implementation OFASN1IA5String
 @synthesize IA5StringValue = _IA5StringValue;
 
-- (instancetype)init
++ (instancetype)stringWithStringValue: (OFString *)stringValue
 {
-	OF_INVALID_INIT_METHOD
+	return [[[self alloc] initWithStringValue: stringValue] autorelease];
+}
+
+- (instancetype)initWithStringValue: (OFString *)stringValue
+{
+	self = [super init];
+
+	@try {
+		_IA5StringValue = [stringValue copy];
+	} @catch (id e) {
+		[self release];
+		@throw e;
+	}
+
+	return self;
 }
 
 - (instancetype)initWithTagClass: (of_asn1_tag_class_t)tagClass
@@ -36,26 +50,36 @@
 		     constructed: (bool)constructed
 	      DEREncodedContents: (OFData *)DEREncodedContents
 {
-	self = [super init];
+	void *pool = objc_autoreleasePoolPush();
+	OFString *IA5StringValue;
 
 	@try {
 		if (tagClass != OF_ASN1_TAG_CLASS_UNIVERSAL ||
 		    tagNumber != OF_ASN1_TAG_NUMBER_IA5_STRING || constructed)
 			@throw [OFInvalidArgumentException exception];
 
-		if ([DEREncodedContents itemSize] != 1)
+		if (DEREncodedContents.itemSize != 1)
 			@throw [OFInvalidArgumentException exception];
 
-		_IA5StringValue = [[OFString alloc]
-		    initWithCString: [DEREncodedContents items]
-			   encoding: OF_STRING_ENCODING_ASCII
-			     length: [DEREncodedContents count]];
+		IA5StringValue = [OFString
+		    stringWithCString: DEREncodedContents.items
+			     encoding: OF_STRING_ENCODING_ASCII
+			       length: DEREncodedContents.count];
 	} @catch (id e) {
 		[self release];
 		@throw e;
 	}
 
+	self = [self initWithStringValue: IA5StringValue];
+
+	objc_autoreleasePoolPop(pool);
+
 	return self;
+}
+
+- (instancetype)init
+{
+	OF_INVALID_INIT_METHOD
 }
 
 - (void)dealloc
@@ -67,7 +91,7 @@
 
 - (OFString *)stringValue
 {
-	return [self IA5StringValue];
+	return self.IA5StringValue;
 }
 
 - (bool)isEqual: (id)object
@@ -87,7 +111,7 @@
 
 - (uint32_t)hash
 {
-	return [_IA5StringValue hash];
+	return _IA5StringValue.hash;
 }
 
 - (OFString *)description

@@ -19,6 +19,9 @@
 
 #import "OFMutableURL.h"
 #import "OFArray.h"
+#ifdef OF_HAVE_FILES
+# import "OFFileManager.h"
+#endif
 #import "OFNumber.h"
 #import "OFString.h"
 
@@ -179,17 +182,17 @@ extern void of_url_verify_escaped(OFString *, OFCharacterSet *);
 	void *pool = objc_autoreleasePoolPush();
 
 	if (components == nil) {
-		[self setPath: nil];
+		self.path = nil;
 		return;
 	}
 
-	if ([components count] == 0)
+	if (components.count == 0)
 		@throw [OFInvalidFormatException exception];
 
-	if ([[components firstObject] length] != 0)
+	if ([components.firstObject length] != 0)
 		@throw [OFInvalidFormatException exception];
 
-	[self setPath: [components componentsJoinedByString: @"/"]];
+	self.path = [components componentsJoinedByString: @"/"];
 
 	objc_autoreleasePoolPop(pool);
 }
@@ -254,6 +257,123 @@ extern void of_url_verify_escaped(OFString *, OFCharacterSet *);
 	[copy makeImmutable];
 
 	return copy;
+}
+
+- (void)appendPathComponent: (OFString *)component
+{
+	[self appendPathComponent: component
+		      isDirectory: false];
+
+#ifdef OF_HAVE_FILES
+	if ([_URLEncodedScheme isEqual: @"file"] &&
+	    ![_URLEncodedPath hasSuffix: @"/"] &&
+	    [[OFFileManager defaultManager] directoryExistsAtURL: self]) {
+		void *pool = objc_autoreleasePoolPush();
+		OFString *path = [_URLEncodedPath
+		    stringByAppendingString: @"/"];
+
+		[_URLEncodedPath release];
+		_URLEncodedPath = [path retain];
+
+		objc_autoreleasePoolPop(pool);
+	}
+#endif
+}
+
+- (void)appendPathComponent: (OFString *)component
+		isDirectory: (bool)isDirectory
+{
+	void *pool;
+	OFString *path;
+
+	if ([component isEqual: @"/"] && [_URLEncodedPath hasSuffix: @"/"])
+		return;
+
+	pool = objc_autoreleasePoolPush();
+	component = [component stringByURLEncodingWithAllowedCharacters:
+	    [OFCharacterSet URLPathAllowedCharacterSet]];
+
+#if defined(OF_WINDOWS) || defined(OF_MSDOS)
+	if ([_URLEncodedPath hasSuffix: @"/"] ||
+	    ([_URLEncodedScheme isEqual: @"file"] &&
+	    [_URLEncodedPath hasSuffix: @":"]))
+#else
+	if ([_URLEncodedPath hasSuffix: @"/"])
+#endif
+		path = [_URLEncodedPath stringByAppendingString: component];
+	else
+		path = [_URLEncodedPath
+		    stringByAppendingFormat: @"/%@", component];
+
+	if (isDirectory && ![path hasSuffix: @"/"])
+		path = [path stringByAppendingString: @"/"];
+
+	[_URLEncodedPath release];
+	_URLEncodedPath = [path retain];
+
+	objc_autoreleasePoolPop(pool);
+}
+
+- (void)standardizePath
+{
+	void *pool;
+	OFMutableArray OF_GENERIC(OFString *) *array;
+	bool done = false, endsWithEmpty;
+	OFString *path;
+
+	if (_URLEncodedPath == nil)
+		return;
+
+	pool = objc_autoreleasePoolPush();
+
+	array = [[[_URLEncodedPath
+	    componentsSeparatedByString: @"/"] mutableCopy] autorelease];
+
+	if ([array.firstObject length] != 0)
+		@throw [OFInvalidFormatException exception];
+
+	endsWithEmpty = ([array.lastObject length] == 0);
+
+	while (!done) {
+		size_t length = array.count;
+
+		done = true;
+
+		for (size_t i = 0; i < length; i++) {
+			OFString *current = [array objectAtIndex: i];
+			OFString *parent =
+			    (i > 0 ? [array objectAtIndex: i - 1] : nil);
+
+			if ([current isEqual: @"."] || current.length == 0) {
+				[array removeObjectAtIndex: i];
+
+				done = false;
+				break;
+			}
+
+			if ([current isEqual: @".."] && parent != nil &&
+			    ![parent isEqual: @".."]) {
+				[array removeObjectsInRange:
+				    of_range(i - 1, 2)];
+
+				done = false;
+				break;
+			}
+		}
+	}
+
+	[array insertObject: @""
+		    atIndex: 0];
+	if (endsWithEmpty)
+		[array addObject: @""];
+
+	path = [array componentsJoinedByString: @"/"];
+	if (path.length == 0)
+		path = @"/";
+
+	[self setURLEncodedPath: path];
+
+	objc_autoreleasePoolPop(pool);
 }
 
 - (void)makeImmutable

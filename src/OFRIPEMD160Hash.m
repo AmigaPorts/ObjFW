@@ -25,6 +25,9 @@
 #import "OFHashAlreadyCalculatedException.h"
 #import "OFOutOfRangeException.h"
 
+#define DIGEST_SIZE 20
+#define BLOCK_SIZE 64
+
 @interface OFRIPEMD160Hash ()
 - (void)of_resetState;
 @end
@@ -138,12 +141,12 @@ processBlock(uint32_t *state, uint32_t *buffer)
 
 + (size_t)digestSize
 {
-	return 20;
+	return DIGEST_SIZE;
 }
 
 + (size_t)blockSize
 {
-	return 64;
+	return BLOCK_SIZE;
 }
 
 + (instancetype)cryptoHash
@@ -158,7 +161,7 @@ processBlock(uint32_t *state, uint32_t *buffer)
 	@try {
 		_iVarsData = [[OFSecureData alloc]
 		    initWithCount: sizeof(*_iVars)];
-		_iVars = [_iVarsData items];
+		_iVars = _iVarsData.mutableItems;
 
 		[self of_resetState];
 	} @catch (id e) {
@@ -181,12 +184,22 @@ processBlock(uint32_t *state, uint32_t *buffer)
 	[super dealloc];
 }
 
+- (size_t)digestSize
+{
+	return DIGEST_SIZE;
+}
+
+- (size_t)blockSize
+{
+	return BLOCK_SIZE;
+}
+
 - (id)copy
 {
 	OFRIPEMD160Hash *copy = [[OFRIPEMD160Hash alloc] of_init];
 
 	copy->_iVarsData = [_iVarsData copy];
-	copy->_iVars = [copy->_iVarsData items];
+	copy->_iVars = copy->_iVarsData.mutableItems;
 	copy->_calculated = _calculated;
 
 	return copy;

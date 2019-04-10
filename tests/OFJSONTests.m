@@ -17,15 +17,6 @@
 
 #include "config.h"
 
-#import "OFString.h"
-#import "OFArray.h"
-#import "OFDictionary.h"
-#import "OFNumber.h"
-#import "OFNull.h"
-#import "OFAutoreleasePool.h"
-
-#import "OFInvalidJSONException.h"
-
 #import "TestsAppDelegate.h"
 
 static OFString *module = @"OFJSON";
@@ -39,15 +30,15 @@ static OFString *module = @"OFJSON";
 	OFDictionary *d = [OFDictionary dictionaryWithKeysAndObjects:
 	    @"foo", @"b\na\r",
 	    @"x", [OFArray arrayWithObjects:
-		[OFNumber numberWithFloat: .5f],
-		[OFNumber numberWithInt: 0xF],
-		[OFNull null],
-		@"foo",
-		[OFNumber numberWithBool: false],
-		nil],
+	    [OFNumber numberWithFloat: .5f],
+	    [OFNumber numberWithInt: 0xF],
+	    [OFNull null],
+	    @"foo",
+	    [OFNumber numberWithBool: false],
+	    nil],
 	    nil];
 
-	TEST(@"-[JSONValue] #1", [[s JSONValue] isEqual: d])
+	TEST(@"-[JSONValue] #1", [s.JSONValue isEqual: d])
 
 	TEST(@"-[JSONRepresentation]", [[d JSONRepresentation] isEqual:
 	    @"{\"x\":[0.5,15,null,\"foo\",false],\"foo\":\"b\\na\\r\"}"])
@@ -71,8 +62,8 @@ static OFString *module = @"OFJSON";
 	    [@"[\"a\" \"b\"]" JSONValue])
 
 	TEST(@"-[JSONValue] #6",
-	    [[@"[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[{}]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]"
-	    JSONValue] isEqual: [OFArray arrayWithObject:
+	    [@"[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[{}]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]"
+	    .JSONValue isEqual: [OFArray arrayWithObject:
 	    [OFArray arrayWithObject: [OFArray arrayWithObject:
 	    [OFArray arrayWithObject: [OFArray arrayWithObject:
 	    [OFArray arrayWithObject: [OFArray arrayWithObject:

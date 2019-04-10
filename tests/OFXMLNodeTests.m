@@ -17,14 +17,6 @@
 
 #include "config.h"
 
-#import "OFXMLElement.h"
-#import "OFXMLCharacters.h"
-#import "OFXMLCDATA.h"
-#import "OFXMLComment.h"
-#import "OFString.h"
-#import "OFArray.h"
-#import "OFAutoreleasePool.h"
-
 #import "TestsAppDelegate.h"
 
 static OFString *module = @"OFXMLNode";
@@ -132,7 +124,7 @@ static OFString *module = @"OFXMLNode";
 	TEST(@"-[elementsForName:namespace:]",
 	    (a = [nodes[2] elementsForName: @"bar"
 				 namespace: @"urn:objfw:test"]) &&
-	    [a count] == 1 && [[[a firstObject] XMLString] isEqual:
+	    a.count == 1 && [[[a firstObject] XMLString] isEqual:
 	    @"<bar xmlns='urn:objfw:test'/>"])
 
 	TEST(@"-[isEqual:]",

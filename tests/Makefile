@@ -11,6 +11,7 @@ PROG_NOINST = tests${PROG_SUFFIX}
 STATIC_LIB_NOINST = ${TESTS_STATIC_LIB}
 SRCS = ForwardingTests.m		\
        OFASN1DERValueTests.m		\
+       OFASN1DEREncodedValueTests.m	\
        OFArrayTests.m			\
        ${OFBLOCKTESTS_M}		\
        OFCharacterSetTests.m		\
@@ -41,7 +42,8 @@ SRCS = ForwardingTests.m		\
        ${USE_SRCS_FILES}		\
        ${USE_SRCS_PLUGINS}		\
        ${USE_SRCS_SOCKETS}		\
-       ${USE_SRCS_THREADS}
+       ${USE_SRCS_THREADS}		\
+       ${USE_SRCS_WINDOWS}
 SRCS_FILES = OFHMACTests.m		\
 	     OFINIFileTests.m		\
 	     OFMD5HashTests.m		\
@@ -62,6 +64,7 @@ SRCS_SOCKETS = OFDNSResolverTests.m		\
 	       OFUDPSocketTests.m		\
 	       SocketTests.m
 SRCS_THREADS = OFThreadTests.m
+SRCS_WINDOWS = OFWindowsRegistryKeyTests.m
 
 IOS_USER ?= mobile
 IOS_TMP ?= /tmp/objfw-test

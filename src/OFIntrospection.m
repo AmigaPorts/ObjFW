@@ -39,10 +39,10 @@
 	self = [super init];
 
 	@try {
-		_selector = (SEL)&method->sel;
+		_selector = (SEL)&method->selector;
 		_name = [[OFString alloc]
 		    initWithUTF8String: sel_getName(_selector)];
-		_typeEncoding = method->sel.types;
+		_typeEncoding = method->selector.typeEncoding;
 	} @catch (id e) {
 		[self release];
 		@throw e;
@@ -81,7 +81,7 @@
 - (OFString *)description
 {
 	return [OFString stringWithFormat: @"<%@: %@ [%s]>",
-					   [self class], _name, _typeEncoding];
+					   self.class, _name, _typeEncoding];
 }
 
 - (bool)isEqual: (id)object
@@ -119,7 +119,7 @@
 
 	OF_HASH_INIT(hash);
 
-	OF_HASH_ADD_HASH(hash, [_name hash]);
+	OF_HASH_ADD_HASH(hash, _name.hash);
 
 	if (_typeEncoding != NULL) {
 		size_t length = strlen(_typeEncoding);
@@ -151,7 +151,7 @@
 	@try {
 		_name = [[OFString alloc] initWithUTF8String: property->name];
 		_attributes =
-		    property->attributes | (property->extended_attributes << 8);
+		    property->attributes | (property->extendedAttributes << 8);
 
 		if (property->getter.name != NULL)
 			_getter = [[OFString alloc]
@@ -179,7 +179,7 @@
 
 		if ((attributes = property_getAttributes(property)) == NULL)
 			@throw [OFInitializationFailedException
-			    exceptionWithClass: [self class]];
+			    exceptionWithClass: self.class];
 
 		while (*attributes != '\0') {
 			const char *start;
@@ -211,7 +211,7 @@
 
 				if (_getter != nil)
 					@throw [OFInitializationFailedException
-					    exceptionWithClass: [self class]];
+					    exceptionWithClass: self.class];
 
 				while (*attributes != ',' &&
 				    *attributes != '\0')
@@ -227,7 +227,7 @@
 
 				if (_setter != nil)
 					@throw [OFInitializationFailedException
-					    exceptionWithClass: [self class]];
+					    exceptionWithClass: self.class];
 
 				while (*attributes != ',' &&
 				    *attributes != '\0')
@@ -254,7 +254,7 @@
 
 				if (_iVar != nil)
 					@throw [OFInitializationFailedException
-					    exceptionWithClass: [self class]];
+					    exceptionWithClass: self.class];
 
 				while (*attributes != ',' &&
 				    *attributes != '\0')
@@ -267,12 +267,12 @@
 				break;
 			default:
 				@throw [OFInitializationFailedException
-				    exceptionWithClass: [self class]];
+				    exceptionWithClass: self.class];
 			}
 
 			if (*attributes != ',' && *attributes != '\0')
 				@throw [OFInitializationFailedException
-				    exceptionWithClass: [self class]];
+				    exceptionWithClass: self.class];
 
 			if (*attributes != '\0')
 				attributes++;
@@ -334,8 +334,8 @@
 			      @"\tSetter = %@\n"
 			      @"\tiVar = %@\n"
 			      @">",
-			      [self class], _name, _attributes,
-			      _getter, _setter, _iVar];
+			      self.class, _name, _attributes, _getter, _setter,
+			      _iVar];
 }
 
 - (bool)isEqual: (id)object
@@ -368,11 +368,11 @@
 
 	OF_HASH_INIT(hash);
 
-	OF_HASH_ADD_HASH(hash, [_name hash]);
+	OF_HASH_ADD_HASH(hash, _name.hash);
 	OF_HASH_ADD(hash, (_attributes & 0xFF00) >> 8);
 	OF_HASH_ADD(hash, _attributes & 0xFF);
-	OF_HASH_ADD_HASH(hash, [_getter hash]);
-	OF_HASH_ADD_HASH(hash, [_setter hash]);
+	OF_HASH_ADD_HASH(hash, _getter.hash);
+	OF_HASH_ADD_HASH(hash, _setter.hash);
 
 	OF_HASH_FINALIZE(hash);
 
@@ -389,17 +389,17 @@
 }
 
 #if defined(OF_OBJFW_RUNTIME)
-- (instancetype)of_initWithIvar: (struct objc_ivar *)ivar
+- (instancetype)of_initWithIVar: (struct objc_ivar *)iVar
 {
 	self = [super init];
 
 	@try {
-		if (ivar->name != NULL)
+		if (iVar->name != NULL)
 			_name = [[OFString alloc]
-			    initWithUTF8String: ivar->name];
+			    initWithUTF8String: iVar->name];
 
-		_typeEncoding = ivar->type;
-		_offset = ivar->offset;
+		_typeEncoding = iVar->typeEncoding;
+		_offset = iVar->offset;
 	} @catch (id e) {
 		[self release];
 		@throw e;
@@ -408,18 +408,18 @@
 	return self;
 }
 #elif defined(OF_APPLE_RUNTIME)
-- (instancetype)of_initWithIvar: (Ivar)ivar
+- (instancetype)of_initWithIVar: (Ivar)iVar
 {
 	self = [super init];
 
 	@try {
-		const char *name = ivar_getName(ivar);
+		const char *name = ivar_getName(iVar);
 
 		if (name != NULL)
 			_name = [[OFString alloc] initWithUTF8String: name];
 
-		_typeEncoding = ivar_getTypeEncoding(ivar);
-		_offset = ivar_getOffset(ivar);
+		_typeEncoding = ivar_getTypeEncoding(iVar);
+		_offset = ivar_getOffset(iVar);
 	} @catch (id e) {
 		[self release];
 		@throw e;
@@ -471,7 +471,7 @@
 #elif defined(OF_APPLE_RUNTIME)
 		Method *methodList;
 		objc_property_t *propertyList;
-		Ivar *ivarList;
+		Ivar *iVarList;
 		unsigned count;
 #endif
 		void *pool;
@@ -482,7 +482,7 @@
 		_instanceVariables = [[OFMutableArray alloc] init];
 
 #if defined(OF_OBJFW_RUNTIME)
-		for (methodList = object_getClass(class)->methodlist;
+		for (methodList = object_getClass(class)->methodList;
 		    methodList != NULL; methodList = methodList->next) {
 			pool = objc_autoreleasePoolPush();
 
@@ -494,7 +494,7 @@
 			objc_autoreleasePoolPop(pool);
 		}
 
-		for (methodList = class->methodlist; methodList != NULL;
+		for (methodList = class->methodList; methodList != NULL;
 		    methodList = methodList->next) {
 			pool = objc_autoreleasePoolPush();
 
@@ -518,14 +518,14 @@
 			objc_autoreleasePoolPop(pool);
 		}
 
-		if (class->ivars != NULL) {
+		if (class->iVars != NULL) {
 			pool = objc_autoreleasePoolPush();
 
-			for (unsigned int i = 0; i < class->ivars->count; i++)
+			for (unsigned int i = 0; i < class->iVars->count; i++)
 				[_instanceVariables addObject:
 				    [[[OFInstanceVariable alloc]
-				    of_initWithIvar:
-				    &class->ivars->ivars[i]] autorelease]];
+				    of_initWithIVar:
+				    &class->iVars->iVars[i]] autorelease]];
 
 			objc_autoreleasePoolPop(pool);
 		}
@@ -573,18 +573,18 @@
 			free(propertyList);
 		}
 
-		ivarList = class_copyIvarList(class, &count);
+		iVarList = class_copyIvarList(class, &count);
 		@try {
 			pool = objc_autoreleasePoolPush();
 
 			for (unsigned int i = 0; i < count; i++)
 				[_instanceVariables addObject:
 				    [[[OFInstanceVariable alloc]
-				    of_initWithIvar: ivarList[i]] autorelease]];
+				    of_initWithIVar: iVarList[i]] autorelease]];
 
 			objc_autoreleasePoolPop(pool);
 		} @finally {
-			free(ivarList);
+			free(iVarList);
 		}
 #else
 # error Invalid ObjC runtime!

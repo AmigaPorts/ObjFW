@@ -17,10 +17,6 @@
 
 #include "config.h"
 
-#import "OFString.h"
-#import "OFNumber.h"
-#import "OFAutoreleasePool.h"
-
 #import "TestsAppDelegate.h"
 
 static OFString *module = @"OFNumber";
@@ -37,11 +33,11 @@ static OFString *module = @"OFNumber";
 	TEST(@"-[isEqual:]",
 	    [num isEqual: [OFNumber numberWithUInt32: 123456789]])
 
-	TEST(@"-[hash]", [num hash] == 0x82D8BC42)
+	TEST(@"-[hash]", num.hash == 0x82D8BC42)
 
-	TEST(@"-[charValue]", [num charValue] == 21)
+	TEST(@"-[charValue]", num.charValue == 21)
 
-	TEST(@"-[doubleValue]", [num doubleValue] == 123456789.L)
+	TEST(@"-[doubleValue]", num.doubleValue == 123456789.L)
 
 	[pool drain];
 }

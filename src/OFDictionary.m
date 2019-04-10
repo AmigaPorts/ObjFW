@@ -290,13 +290,13 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 	size_t count;
 
 	@try {
-		count = [objects_ count];
+		count = objects_.count;
 
-		if (count != [keys_ count])
+		if (count != keys_.count)
 			@throw [OFInvalidArgumentException exception];
 
-		objects = [objects_ objects];
-		keys = [keys_ objects];
+		objects = objects_.objects;
+		keys = keys_.objects;
 	} @catch (id e) {
 		[self release];
 		@throw e;
@@ -350,17 +350,8 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 
 - (id)valueForKey: (OFString *)key
 {
-	if ([key hasPrefix: @"@"]) {
-		void *pool = objc_autoreleasePoolPush();
-		id ret;
-
-		key = [key substringWithRange: of_range(1, [key length] - 1)];
-		ret = [[super valueForKey: key] retain];
-
-		objc_autoreleasePoolPop(pool);
-
-		return [ret autorelease];
-	}
+	if ([key isEqual: @"@count"])
+		return [super valueForKey: @"count"];
 
 	return [self objectForKey: key];
 }
@@ -368,17 +359,6 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 - (void)setValue: (id)value
 	  forKey: (OFString *)key
 {
-	if ([key hasPrefix: @"@"]) {
-		void *pool = objc_autoreleasePoolPush();
-
-		key = [key substringWithRange: of_range(1, [key length] - 1)];
-		[super setValue: value
-			 forKey: key];
-
-		objc_autoreleasePoolPop(pool);
-		return;
-	}
-
 	if (![self isKindOfClass: [OFMutableDictionary class]])
 		@throw [OFUndefinedKeyException exceptionWithObject: self
 								key: key
@@ -418,7 +398,7 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 
 	otherDictionary = object;
 
-	if ([otherDictionary count] != [self count])
+	if (otherDictionary.count != self.count)
 		return false;
 
 	pool = objc_autoreleasePoolPush();
@@ -490,7 +470,7 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 
 - (OFArray *)allKeys
 {
-	OFMutableArray *ret = [OFMutableArray arrayWithCapacity: [self count]];
+	OFMutableArray *ret = [OFMutableArray arrayWithCapacity: self.count];
 
 	for (id key in self)
 		[ret addObject: key];
@@ -502,7 +482,7 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 
 - (OFArray *)allObjects
 {
-	OFMutableArray *ret = [OFMutableArray arrayWithCapacity: [self count]];
+	OFMutableArray *ret = [OFMutableArray arrayWithCapacity: self.count];
 	void *pool = objc_autoreleasePoolPush();
 	OFEnumerator *enumerator = [self objectEnumerator];
 	id object;
@@ -605,8 +585,8 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 	OFMutableString *ret;
 	void *pool;
 	OFEnumerator *keyEnumerator, *objectEnumerator;
-	id key, object;
-	size_t i, count = [self count];
+	OFObject *key, *object;
+	size_t i, count = self.count;
 
 	if (count == 0)
 		return @"{}";
@@ -621,9 +601,9 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 	    (object = [objectEnumerator nextObject]) != nil) {
 		void *pool2 = objc_autoreleasePoolPush();
 
-		[ret appendString: [key description]];
+		[ret appendString: key.description];
 		[ret appendString: @" = "];
-		[ret appendString: [object description]];
+		[ret appendString: object.description];
 
 		if (++i < count)
 			[ret appendString: @";\n"];
@@ -650,7 +630,7 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 	OFCharacterSet *allowed = [OFCharacterSet_URLQueryPartAllowed
 	    URLQueryPartAllowedCharacterSet];
 	bool first = true;
-	id key, object;
+	OFObject *key, *object;
 
 	while ((key = [keyEnumerator nextObject]) != nil &&
 	    (object = [objectEnumerator nextObject]) != nil) {
@@ -659,10 +639,10 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 		else
 			[ret appendString: @"&"];
 
-		[ret appendString: [[key description]
+		[ret appendString: [key.description
 		    stringByURLEncodingWithAllowedCharacters: allowed]];
 		[ret appendString: @"="];
-		[ret appendString: [[object description]
+		[ret appendString: [object.description
 		    stringByURLEncodingWithAllowedCharacters: allowed]];
 	}
 
@@ -697,12 +677,12 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 		keyElement = [OFXMLElement
 		    elementWithName: @"key"
 			  namespace: OF_SERIALIZATION_NS];
-		[keyElement addChild: [key XMLElementBySerializing]];
+		[keyElement addChild: key.XMLElementBySerializing];
 
 		objectElement = [OFXMLElement
 		    elementWithName: @"object"
 			  namespace: OF_SERIALIZATION_NS];
-		[objectElement addChild: [object XMLElementBySerializing]];
+		[objectElement addChild: object.XMLElementBySerializing];
 
 		[element addChild: keyElement];
 		[element addChild: objectElement];
@@ -736,7 +716,7 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 	void *pool = objc_autoreleasePoolPush();
 	OFEnumerator *keyEnumerator = [self keyEnumerator];
 	OFEnumerator *objectEnumerator = [self objectEnumerator];
-	size_t i, count = [self count];
+	size_t i, count = self.count;
 	id key, object;
 
 	if (options & OF_JSON_REPRESENTATION_PRETTY) {
@@ -816,10 +796,10 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 	size_t i, count;
 	void *pool;
 	OFEnumerator *keyEnumerator, *objectEnumerator;
-	id key, object;
+	id <OFMessagePackRepresentation> key, object;
 
 	data = [OFMutableData data];
-	count = [self count];
+	count = self.count;
 
 	if (count <= 15) {
 		uint8_t tmp = 0x80 | ((uint8_t)count & 0xF);
@@ -853,13 +833,13 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 
 		i++;
 
-		child = [key messagePackRepresentation];
-		[data addItems: [child items]
-			 count: [child count]];
+		child = key.messagePackRepresentation;
+		[data addItems: child.items
+			 count: child.count];
 
-		child = [object messagePackRepresentation];
-		[data addItems: [child items]
-			 count: [child count]];
+		child = object.messagePackRepresentation;
+		[data addItems: child.items
+			 count: child.count];
 
 		objc_autoreleasePoolPop(pool2);
 	}

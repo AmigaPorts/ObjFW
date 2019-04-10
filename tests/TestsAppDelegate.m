@@ -19,8 +19,6 @@
 
 #include <stdlib.h>
 
-#import "ObjFW.h"
-
 #import "TestsAppDelegate.h"
 
 #if defined(STDOUT) && (defined(OF_WINDOWS) || defined(OF_MSDOS) || \
@@ -150,7 +148,7 @@ main(int argc, char *argv[])
 		    [[TestsAppDelegate alloc] init]);
 	} @catch (id e) {
 		TestsAppDelegate *delegate =
-		    [[OFApplication sharedApplication] delegate];
+		    [OFApplication sharedApplication].delegate;
 		OFString *string = [OFString stringWithFormat:
 		    @"\nRuntime error: Unhandled exception:\n%@\n", e];
 		OFString *backtrace = [OFString stringWithFormat:
@@ -232,7 +230,7 @@ main(int argc, char *argv[])
 	}
 
 	pspDebugScreenSetXY(0, y);
-	pspDebugScreenPrintData([str UTF8String], [str UTF8StringLength]);
+	pspDebugScreenPrintData(str.UTF8String, str.UTF8StringLength);
 #elif defined(STDOUT)
 	switch (color) {
 	case NO_COLOR:
@@ -439,8 +437,12 @@ main(int argc, char *argv[])
 	[self JSONTests];
 	[self propertyListTests];
 	[self ASN1DERValueTests];
+	[self ASN1DEREncodedValueTests];
 #if defined(OF_HAVE_PLUGINS)
 	[self pluginTests];
+#endif
+#ifdef OF_WINDOWS
+	[self windowsRegistryKeyTests];
 #endif
 
 #ifdef OF_HAVE_SOCKETS

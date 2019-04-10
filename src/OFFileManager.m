@@ -183,7 +183,7 @@ OF_DESTRUCTOR()
 	void *pool = objc_autoreleasePoolPush();
 	OFURL *ret;
 
-	ret = [OFURL fileURLWithPath: [self currentDirectoryPath]];
+	ret = [OFURL fileURLWithPath: self.currentDirectoryPath];
 
 	[ret retain];
 	objc_autoreleasePoolPop(pool);
@@ -312,7 +312,6 @@ OF_DESTRUCTOR()
 	void *pool = objc_autoreleasePoolPush();
 	OFMutableURL *URL = [[URL_ mutableCopy] autorelease];
 	OFArray OF_GENERIC(OFString *) *components;
-	OFString *currentPath = nil;
 
 	if (URL == nil)
 		@throw [OFInvalidArgumentException exception];
@@ -340,22 +339,17 @@ OF_DESTRUCTOR()
 		 * If we didn't fail because any of the parents is missing,
 		 * there is no point in trying to create the parents.
 		 */
-		if ([e errNo] != ENOENT)
+		if (e.errNo != ENOENT)
 			@throw e;
 	}
 
-	components = [[URL URLEncodedPath] componentsSeparatedByString: @"/"];
+	components = [[URL.pathComponents retain] autorelease];
+	URL.URLEncodedPath = @"/";
 
 	for (OFString *component in components) {
-		if (currentPath != nil)
-			currentPath = [currentPath
-			    stringByAppendingFormat: @"/%@", component];
-		else
-			currentPath = component;
+		[URL appendPathComponent: component];
 
-		[URL setURLEncodedPath: currentPath];
-
-		if ([currentPath length] > 0 &&
+		if (![URL.URLEncodedPath isEqual: @"/"] &&
 		    ![self directoryExistsAtURL: URL])
 			[self createDirectoryAtURL: URL];
 	}
@@ -416,7 +410,7 @@ OF_DESTRUCTOR()
 		@throw [OFInvalidArgumentException exception];
 
 #if defined(OF_WINDOWS)
-	if (_wchdir([path UTF16String]) != 0)
+	if (_wchdir(path.UTF16String) != 0)
 		@throw [OFChangeCurrentDirectoryPathFailedException
 		    exceptionWithPath: path
 				errNo: errno];
@@ -465,7 +459,7 @@ OF_DESTRUCTOR()
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	[self changeCurrentDirectoryPath: [URL fileSystemRepresentation]];
+	[self changeCurrentDirectoryPath: URL.fileSystemRepresentation];
 
 	objc_autoreleasePoolPop(pool);
 }
@@ -514,10 +508,10 @@ OF_DESTRUCTOR()
 		@throw [OFCopyItemFailedException
 		    exceptionWithSourceURL: source
 			    destinationURL: destination
-				     errNo: [e errNo]];
+				     errNo: e.errNo];
 	}
 
-	type = [attributes fileType];
+	type = attributes.fileType;
 
 	if ([type isEqual: of_file_type_directory]) {
 		OFArray *contents;
@@ -586,7 +580,7 @@ OF_DESTRUCTOR()
 			    destination] openItemAtURL: destination
 						  mode: @"w"];
 
-			while (![sourceStream isAtEndOfStream]) {
+			while (!sourceStream.atEndOfStream) {
 				size_t length;
 
 				length = [sourceStream
@@ -630,7 +624,7 @@ OF_DESTRUCTOR()
 	} else if ([type isEqual: of_file_type_symbolic_link]) {
 		@try {
 			OFString *linkDestination =
-			    [attributes fileSymbolicLinkDestination];
+			    attributes.fileSymbolicLinkDestination;
 
 			[self createSymbolicLinkAtURL: destination
 				  withDestinationPath: linkDestination];
@@ -690,7 +684,7 @@ OF_DESTRUCTOR()
 					toURL: destination])
 			return;
 	} @catch (OFMoveItemFailedException *e) {
-		if ([e errNo] != EXDEV)
+		if (e.errNo != EXDEV)
 			@throw e;
 	}
 
@@ -709,7 +703,7 @@ OF_DESTRUCTOR()
 		@throw [OFMoveItemFailedException
 		    exceptionWithSourceURL: source
 			    destinationURL: destination
-				     errNo: [e errNo]];
+				     errNo: e.errNo];
 	}
 
 	@try {
@@ -718,7 +712,7 @@ OF_DESTRUCTOR()
 		@throw [OFMoveItemFailedException
 		    exceptionWithSourceURL: source
 			    destinationURL: destination
-				     errNo: [e errNo]];
+				     errNo: e.errNo];
 	}
 
 	objc_autoreleasePoolPop(pool);
@@ -755,7 +749,7 @@ OF_DESTRUCTOR()
 	if (source == nil || destination == nil)
 		@throw [OFInvalidArgumentException exception];
 
-	if (![[destination scheme] isEqual: [source scheme]])
+	if (![destination.scheme isEqual: source.scheme])
 		@throw [OFInvalidArgumentException exception];
 
 	URLHandler = [OFURLHandler handlerForURL: source];

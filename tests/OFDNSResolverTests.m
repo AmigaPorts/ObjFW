@@ -17,12 +17,6 @@
 
 #include "config.h"
 
-#import "OFDNSResolver.h"
-#import "OFArray.h"
-#import "OFDictionary.h"
-#import "OFString.h"
-#import "OFAutoreleasePool.h"
-
 #import "TestsAppDelegate.h"
 
 static OFString *module = @"OFDNSResolverTests";
@@ -34,13 +28,13 @@ static OFString *module = @"OFDNSResolverTests";
 	OFDNSResolver *resolver = [OFDNSResolver resolver];
 	OFMutableString *staticHosts = [OFMutableString string];
 
-	for (OFString *host in [resolver staticHosts]) {
+	for (OFString *host in resolver.staticHosts) {
 		OFString *IPs;
 
-		if ([staticHosts length] > 0)
+		if (staticHosts.length > 0)
 			[staticHosts appendString: @"; "];
 
-		IPs = [[[resolver staticHosts] objectForKey: host]
+		IPs = [[resolver.staticHosts objectForKey: host]
 		    componentsJoinedByString: @", "];
 
 		[staticHosts appendFormat: @"%@=(%@)", host, IPs];
@@ -48,24 +42,24 @@ static OFString *module = @"OFDNSResolverTests";
 	PRINT(GREEN, @"Static hosts: %@", staticHosts);
 
 	PRINT(GREEN, @"Name servers: %@",
-	    [[resolver nameServers] componentsJoinedByString: @", "]);
+	    [resolver.nameServers componentsJoinedByString: @", "]);
 
-	PRINT(GREEN, @"Local domain: %@", [resolver localDomain]);
+	PRINT(GREEN, @"Local domain: %@", resolver.localDomain);
 
 	PRINT(GREEN, @"Search domains: %@",
-	    [[resolver searchDomains] componentsJoinedByString: @", "]);
+	    [resolver.searchDomains componentsJoinedByString: @", "]);
 
-	PRINT(GREEN, @"Timeout: %lf", [resolver timeout]);
+	PRINT(GREEN, @"Timeout: %lf", resolver.timeout);
 
-	PRINT(GREEN, @"Max attempts: %u", [resolver maxAttempts]);
+	PRINT(GREEN, @"Max attempts: %u", resolver.maxAttempts);
 
 	PRINT(GREEN, @"Min number of dots in absolute name: %u",
-	    [resolver minNumberOfDotsInAbsoluteName]);
+	    resolver.minNumberOfDotsInAbsoluteName);
 
-	PRINT(GREEN, @"Uses TCP: %u", [resolver usesTCP]);
+	PRINT(GREEN, @"Uses TCP: %u", resolver.usesTCP);
 
 	PRINT(GREEN, @"Config reload interval: %lf",
-	    [resolver configReloadInterval]);
+	    resolver.configReloadInterval);
 
 	[pool drain];
 }

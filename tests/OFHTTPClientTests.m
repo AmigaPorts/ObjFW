@@ -20,20 +20,6 @@
 #include <inttypes.h>
 #include <string.h>
 
-#import "OFHTTPClient.h"
-#import "OFCondition.h"
-#import "OFData.h"
-#import "OFDate.h"
-#import "OFDictionary.h"
-#import "OFHTTPRequest.h"
-#import "OFHTTPResponse.h"
-#import "OFRunLoop.h"
-#import "OFString.h"
-#import "OFTCPSocket.h"
-#import "OFThread.h"
-#import "OFURL.h"
-#import "OFAutoreleasePool.h"
-
 #import "TestsAppDelegate.h"
 
 static OFString *module = @"OFHTTPClient";
@@ -144,11 +130,11 @@ static OFHTTPResponse *response = nil;
 					server->_port]];
 
 	TEST(@"-[asyncPerformRequest:]",
-	    (client = [OFHTTPClient client]) && R([client setDelegate: self]) &&
+	    (client = [OFHTTPClient client]) && (client.delegate = self) &&
 	    (request = [OFHTTPRequest requestWithURL: URL]) &&
-	    R([request setHeaders:
+	    (request.headers =
 	    [OFDictionary dictionaryWithObject: @"5"
-					forKey: @"Content-Length"]]) &&
+					forKey: @"Content-Length"]) &&
 	    R([client asyncPerformRequest: request]))
 
 	[[OFRunLoop mainRunLoop] runUntilDate:
@@ -158,11 +144,11 @@ static OFHTTPResponse *response = nil;
 	TEST(@"Asynchronous handling of requests", response != nil)
 
 	TEST(@"Normalization of server header keys",
-	    [[response headers] objectForKey: @"Content-Length"] != nil)
+	    [response.headers objectForKey: @"Content-Length"] != nil)
 
 	TEST(@"Correct parsing of data",
 	    (data = [response readDataUntilEndOfStream]) &&
-	    [data count] == 7 && memcmp([data items], "foo\nbar", 7) == 0)
+	    data.count == 7 && memcmp(data.items, "foo\nbar", 7) == 0)
 
 	[server join];
 

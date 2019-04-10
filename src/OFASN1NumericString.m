@@ -27,9 +27,33 @@
 @implementation OFASN1NumericString
 @synthesize numericStringValue = _numericStringValue;
 
-- (instancetype)init
++ (instancetype)stringWithStringValue: (OFString *)stringValue
 {
-	OF_INVALID_INIT_METHOD
+	return [[[self alloc] initWithStringValue: stringValue] autorelease];
+}
+
+- (instancetype)initWithStringValue: (OFString *)stringValue
+{
+	self = [super init];
+
+	@try {
+		void *pool = objc_autoreleasePoolPush();
+		const char *cString = stringValue.UTF8String;
+		size_t length = stringValue.UTF8StringLength;
+
+		for (size_t i = 0; i < length; i++)
+			if (!of_ascii_isdigit(cString[i]) && cString[i] != ' ')
+				@throw [OFInvalidEncodingException exception];
+
+		_numericStringValue = [stringValue copy];
+
+		objc_autoreleasePoolPop(pool);
+	} @catch (id e) {
+		[self release];
+		@throw e;
+	}
+
+	return self;
 }
 
 - (instancetype)initWithTagClass: (of_asn1_tag_class_t)tagClass
@@ -37,34 +61,37 @@
 		     constructed: (bool)constructed
 	      DEREncodedContents: (OFData *)DEREncodedContents
 {
-	self = [super init];
+	void *pool = objc_autoreleasePoolPush();
+	OFString *numericStringValue;
 
 	@try {
-		const unsigned char *items = [DEREncodedContents items];
-		size_t count = [DEREncodedContents count];
-
 		if (tagClass != OF_ASN1_TAG_CLASS_UNIVERSAL ||
 		    tagNumber != OF_ASN1_TAG_NUMBER_NUMERIC_STRING ||
 		    constructed)
 			@throw [OFInvalidArgumentException exception];
 
-		if ([DEREncodedContents itemSize] != 1)
+		if (DEREncodedContents.itemSize != 1)
 			@throw [OFInvalidArgumentException exception];
 
-		for (size_t i = 0; i < count; i++)
-			if (!of_ascii_isdigit(items[i]) && items[i] != ' ')
-				@throw [OFInvalidEncodingException exception];
-
-		_numericStringValue = [[OFString alloc]
-		    initWithCString: [DEREncodedContents items]
-			   encoding: OF_STRING_ENCODING_ASCII
-			     length: [DEREncodedContents count]];
+		numericStringValue = [OFString
+		    stringWithCString: DEREncodedContents.items
+			     encoding: OF_STRING_ENCODING_ASCII
+			       length: DEREncodedContents.count];
 	} @catch (id e) {
 		[self release];
 		@throw e;
 	}
 
+	self = [self initWithStringValue: numericStringValue];
+
+	objc_autoreleasePoolPop(pool);
+
 	return self;
+}
+
+- (instancetype)init
+{
+	OF_INVALID_INIT_METHOD
 }
 
 - (void)dealloc
@@ -76,7 +103,7 @@
 
 - (OFString *)stringValue
 {
-	return [self numericStringValue];
+	return self.numericStringValue;
 }
 
 - (bool)isEqual: (id)object
@@ -96,7 +123,7 @@
 
 - (uint32_t)hash
 {
-	return [_numericStringValue hash];
+	return _numericStringValue.hash;
 }
 
 - (OFString *)description
