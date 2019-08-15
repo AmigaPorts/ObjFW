@@ -72,16 +72,6 @@ struct objc_abi_category {
 	struct objc_protocol_list *_Nullable protocols;
 };
 
-struct objc_abi_method_description {
-	const char *_Nonnull name;
-	const char *_Nonnull typeEncoding;
-};
-
-struct objc_abi_method_description_list {
-	int count;
-	struct objc_abi_method_description list[1];
-};
-
 struct objc_abi_static_instances {
 	const char *_Nonnull className;
 	id _Nullable instances[1];
@@ -166,7 +156,7 @@ struct objc_libc {
 # endif
 	void (*_Nonnull __register_frame_info)(const void *_Nonnull,
 	    void *_Nonnull);
-	void (*_Nonnull __deregister_frame_info)(const void *_Nonnull);
+	void *(*_Nonnull __deregister_frame_info)(const void *_Nonnull);
 };
 #endif
 
@@ -278,3 +268,13 @@ objc_dtable_get(const struct objc_dtable *_Nonnull dtable, uint32_t idx)
 		abort();						\
 		OF_UNREACHABLE						\
 	}
+
+@interface DummyObject
+{
+	Class _Nonnull isa;
+}
+
++ (void)initialize;
++ (bool)resolveClassMethod: (nonnull SEL)selector;
++ (bool)resolveInstanceMethod: (nonnull SEL)selector;
+@end

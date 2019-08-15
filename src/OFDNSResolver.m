@@ -55,13 +55,7 @@
 # undef interface
 #endif
 
-#ifdef OF_AMIGAOS4
-# define __USE_INLINE__
-# define __NOLIBBASE__
-# define __NOGLOBALIFACE__
-# include <proto/exec.h>
-# include <proto/bsdsocket.h>
-#endif
+#import "socket_helpers.h"
 
 #ifdef OF_NINTENDO_3DS
 # include <3ds.h>
@@ -99,28 +93,14 @@
 # define RESOLV_CONF_PATH @"/etc/resolv.conf"
 #endif
 
-#ifdef OF_AMIGAOS4
-extern struct ExecIFace *IExec;
-static struct Library *SocketBase = NULL;
-static struct SocketIFace *ISocket = NULL;
-
-OF_DESTRUCTOR()
-{
-	if (ISocket != NULL)
-		DropInterface(ISocket);
-
-	if (SocketBase != NULL)
-		CloseLibrary(SocketBase);
-}
-#endif
-
 /*
  * TODO:
  *
  *  - Fallback to TCP
  */
 
-static of_run_loop_mode_t resolveRunLoopMode = @"of_dns_resolver_resolve_mode";
+static const of_run_loop_mode_t resolveRunLoopMode =
+    @"of_dns_resolver_resolve_mode";
 
 @interface OFDNSResolverSettings: OFObject
 {
@@ -169,7 +149,7 @@ static of_run_loop_mode_t resolveRunLoopMode = @"of_dns_resolver_resolve_mode";
 		     context: (id)context;
 @end
 
-@interface OFDNSResolver_AsyncResolveSocketAddressesContext: OFObject
+@interface OFDNSResolverAsyncResolveSocketAddressesContext: OFObject
 {
 	OFString *_host;
 	id _delegate;
@@ -211,7 +191,7 @@ static of_run_loop_mode_t resolveRunLoopMode = @"of_dns_resolver_resolve_mode";
 	     exception: (id)exception;
 @end
 
-@interface OFDNSResolver_ResolveSocketAddressesDelegate: OFObject
+@interface OFDNSResolverResolveSocketAddressesDelegate: OFObject
     <OFDNSResolverDelegate>
 {
 @public
@@ -833,7 +813,7 @@ static void callback(id target, SEL selector, OFDNSResolver *resolver,
 }
 @end
 
-@implementation OFDNSResolver_AsyncResolveSocketAddressesContext
+@implementation OFDNSResolverAsyncResolveSocketAddressesContext
 - (instancetype)initWithHost: (OFString *)host
 		    delegate: (id)delegate
 {
@@ -1112,7 +1092,7 @@ static void callback(id target, SEL selector, OFDNSResolver *resolver,
 }
 @end
 
-@implementation OFDNSResolver_ResolveSocketAddressesDelegate
+@implementation OFDNSResolverResolveSocketAddressesDelegate
 - (void)dealloc
 {
 	[_socketAddresses release];
@@ -1139,18 +1119,13 @@ static void callback(id target, SEL selector, OFDNSResolver *resolver,
 @synthesize minNumberOfDotsInAbsoluteName = _minNumberOfDotsInAbsoluteName;
 @synthesize usesTCP = _usesTCP, configReloadInterval = _configReloadInterval;
 
-#ifdef OF_AMIGAOS4
+#ifdef OF_AMIGAOS
 + (void)initialize
 {
 	if (self != [OFDNSResolver class])
 		return;
 
-	if ((SocketBase = OpenLibrary("bsdsocket.library", 4)) == NULL)
-		@throw [OFInitializationFailedException
-		    exceptionWithClass: self];
-
-	if ((ISocket = (struct SocketIFace *)
-	    GetInterface(SocketBase, "main", 1, NULL)) == NULL)
+	if (!of_socket_init())
 		@throw [OFInitializationFailedException
 		    exceptionWithClass: self];
 }
@@ -1589,8 +1564,8 @@ static void callback(id target, SEL selector, OFDNSResolver *resolver,
 - (void)of_reloadSystemConfig
 {
 	/*
-	 * TODO: Rather than reparsing every, check what actually changed
-	 * (mtime) and only reset those.
+	 * TODO: Rather than reparsing every time, check what actually changed
+	 *	 (mtime) and only reset those.
 	 */
 
 	if (_lastConfigReload != nil && _configReloadInterval > 0 &&
@@ -2068,7 +2043,7 @@ static void callback(id target, SEL selector, OFDNSResolver *resolver,
 {
 	OFArray OF_GENERIC(OFString *) *aliases;
 	void *pool;
-	OFDNSResolver_AsyncResolveSocketAddressesContext *context;
+	OFDNSResolverAsyncResolveSocketAddressesContext *context;
 
 	@try {
 		of_socket_address_t address =
@@ -2187,7 +2162,7 @@ static void callback(id target, SEL selector, OFDNSResolver *resolver,
 
 	pool = objc_autoreleasePoolPush();
 
-	context = [[[OFDNSResolver_AsyncResolveSocketAddressesContext alloc]
+	context = [[[OFDNSResolverAsyncResolveSocketAddressesContext alloc]
 	    initWithHost: host
 		delegate: delegate] autorelease];
 
@@ -2253,10 +2228,10 @@ static void callback(id target, SEL selector, OFDNSResolver *resolver,
 {
 	void *pool = objc_autoreleasePoolPush();
 	OFRunLoop *runLoop = [OFRunLoop currentRunLoop];
-	OFDNSResolver_ResolveSocketAddressesDelegate *delegate;
+	OFDNSResolverResolveSocketAddressesDelegate *delegate;
 	OFData *ret;
 
-	delegate = [[[OFDNSResolver_ResolveSocketAddressesDelegate
+	delegate = [[[OFDNSResolverResolveSocketAddressesDelegate
 	    alloc] init] autorelease];
 
 	[self asyncResolveSocketAddressesForHost: host

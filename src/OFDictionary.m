@@ -22,12 +22,13 @@
 #include <assert.h>
 
 #import "OFDictionary.h"
-#import "OFDictionary_hashtable.h"
 #import "OFArray.h"
 #import "OFCharacterSet.h"
+#import "OFData.h"
+#import "OFEnumerator.h"
+#import "OFMapTableDictionary.h"
 #import "OFString.h"
 #import "OFXMLElement.h"
-#import "OFData.h"
 
 #import "OFInvalidArgumentException.h"
 #import "OFOutOfRangeException.h"
@@ -44,46 +45,55 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 					 depth: (size_t)depth;
 @end
 
-@interface OFDictionary_placeholder: OFDictionary
+@interface OFDictionaryPlaceholder: OFDictionary
 @end
 
-@interface OFCharacterSet_URLQueryPartAllowed: OFCharacterSet
+@interface OFDictionaryObjectEnumerator: OFEnumerator
+{
+	OFDictionary *_dictionary;
+	OFEnumerator *_keyEnumerator;
+}
+
+- (instancetype)initWithDictionary: (OFDictionary *)dictionary;
+@end
+
+@interface OFURLQueryPartAllowedCharacterSet: OFCharacterSet
 + (OFCharacterSet *)URLQueryPartAllowedCharacterSet;
 @end
 
-@implementation OFDictionary_placeholder
+@implementation OFDictionaryPlaceholder
 - (instancetype)init
 {
-	return (id)[[OFDictionary_hashtable alloc] init];
+	return (id)[[OFMapTableDictionary alloc] init];
 }
 
 - (instancetype)initWithDictionary: (OFDictionary *)dictionary
 {
-	return (id)[[OFDictionary_hashtable alloc]
+	return (id)[[OFMapTableDictionary alloc]
 	    initWithDictionary: dictionary];
 }
 
 - (instancetype)initWithObject: (id)object
 			forKey: (id)key
 {
-	return (id)[[OFDictionary_hashtable alloc] initWithObject: object
-							   forKey: key];
+	return (id)[[OFMapTableDictionary alloc] initWithObject: object
+							 forKey: key];
 }
 
 - (instancetype)initWithObjects: (OFArray *)objects
 			forKeys: (OFArray *)keys
 {
-	return (id)[[OFDictionary_hashtable alloc] initWithObjects: objects
-							   forKeys: keys];
+	return (id)[[OFMapTableDictionary alloc] initWithObjects: objects
+							 forKeys: keys];
 }
 
 - (instancetype)initWithObjects: (id const *)objects
 			forKeys: (id const *)keys
 			  count: (size_t)count
 {
-	return (id)[[OFDictionary_hashtable alloc] initWithObjects: objects
-							   forKeys: keys
-							     count: count];
+	return (id)[[OFMapTableDictionary alloc] initWithObjects: objects
+							 forKeys: keys
+							   count: count];
 }
 
 - (instancetype)initWithKeysAndObjects: (id <OFCopying>)firstKey, ...
@@ -92,8 +102,8 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 	va_list arguments;
 
 	va_start(arguments, firstKey);
-	ret = [[OFDictionary_hashtable alloc] initWithKey: firstKey
-						arguments: arguments];
+	ret = [[OFMapTableDictionary alloc] initWithKey: firstKey
+					      arguments: arguments];
 	va_end(arguments);
 
 	return ret;
@@ -102,13 +112,13 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 - (instancetype)initWithKey: (id <OFCopying>)firstKey
 		  arguments: (va_list)arguments
 {
-	return (id)[[OFDictionary_hashtable alloc] initWithKey: firstKey
-						     arguments: arguments];
+	return (id)[[OFMapTableDictionary alloc] initWithKey: firstKey
+						   arguments: arguments];
 }
 
 - (instancetype)initWithSerialization: (OFXMLElement *)element
 {
-	return (id)[[OFDictionary_hashtable alloc]
+	return (id)[[OFMapTableDictionary alloc]
 	    initWithSerialization: element];
 }
 
@@ -132,14 +142,14 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 }
 @end
 
-@implementation OFCharacterSet_URLQueryPartAllowed
+@implementation OFURLQueryPartAllowedCharacterSet
 + (void)initialize
 {
-	if (self != [OFCharacterSet_URLQueryPartAllowed class])
+	if (self != [OFURLQueryPartAllowedCharacterSet class])
 		return;
 
 	URLQueryPartAllowedCharacterSet =
-	    [[OFCharacterSet_URLQueryPartAllowed alloc] init];
+	    [[OFURLQueryPartAllowedCharacterSet alloc] init];
 }
 
 + (OFCharacterSet *)URLQueryPartAllowedCharacterSet
@@ -196,7 +206,7 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 + (void)initialize
 {
 	if (self == [OFDictionary class])
-		placeholder.isa = [OFDictionary_placeholder class];
+		placeholder.isa = [OFDictionaryPlaceholder class];
 }
 
 + (instancetype)alloc
@@ -504,14 +514,37 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 
 - (OFEnumerator *)objectEnumerator
 {
-	OF_UNRECOGNIZED_SELECTOR
+	return [[[OFDictionaryObjectEnumerator alloc]
+	    initWithDictionary: self] autorelease];
 }
 
 - (int)countByEnumeratingWithState: (of_fast_enumeration_state_t *)state
 			   objects: (id *)objects
 			     count: (int)count
 {
-	OF_UNRECOGNIZED_SELECTOR
+	OFEnumerator *enumerator;
+	int i;
+
+	memcpy(&enumerator, state->extra, sizeof(enumerator));
+
+	if (enumerator == nil) {
+		enumerator = [self keyEnumerator];
+		memcpy(state->extra, &enumerator, sizeof(enumerator));
+	}
+
+	state->itemsPtr = objects;
+	state->mutationsPtr = (unsigned long *)self;
+
+	for (i = 0; i < count; i++) {
+		id object = [enumerator nextObject];
+
+		if (object == nil)
+			return i;
+
+		objects[i] = object;
+	}
+
+	return i;
 }
 
 #ifdef OF_HAVE_BLOCKS
@@ -627,7 +660,7 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 	void *pool = objc_autoreleasePoolPush();
 	OFEnumerator *keyEnumerator = [self keyEnumerator];
 	OFEnumerator *objectEnumerator = [self objectEnumerator];
-	OFCharacterSet *allowed = [OFCharacterSet_URLQueryPartAllowed
+	OFCharacterSet *allowed = [OFURLQueryPartAllowedCharacterSet
 	    URLQueryPartAllowedCharacterSet];
 	bool first = true;
 	OFObject *key, *object;
@@ -851,5 +884,48 @@ static OFCharacterSet *URLQueryPartAllowedCharacterSet = nil;
 	objc_autoreleasePoolPop(pool);
 
 	return data;
+}
+@end
+
+@implementation OFDictionaryObjectEnumerator
+- (instancetype)initWithDictionary: (OFDictionary *)dictionary
+{
+	self = [super init];
+
+	@try {
+		void *pool = objc_autoreleasePoolPush();
+
+		_dictionary = [dictionary retain];
+		_keyEnumerator = [[_dictionary keyEnumerator] retain];
+
+		objc_autoreleasePoolPop(pool);
+	} @catch (id e) {
+		[self release];
+		@throw e;
+	}
+
+	return self;
+}
+
+- (void)dealloc
+{
+	[_dictionary release];
+	[_keyEnumerator release];
+
+	[super dealloc];
+}
+
+- (id)nextObject
+{
+	id key = [_keyEnumerator nextObject];
+	id object;
+
+	if (key == nil)
+		return nil;
+
+	if ((object = [_dictionary objectForKey: key]) == nil)
+		@throw [OFInvalidArgumentException exception];
+
+	return object;
 }
 @end

@@ -5,12 +5,29 @@ matrix:
     # Linux
     - os: linux
       compiler: gcc
-      dist: trusty
+      dist: bionic
       sudo: required
     - os: linux
       compiler: clang
-      dist: trusty
+      dist: bionic
       sudo: required
+    - os: linux
+      compiler: gcc
+      dist: xenial
+      sudo: required
+    - os: linux
+      compiler: clang
+      dist: xenial
+      sudo: required
+    # Currently broken
+    #- os: linux
+    #  compiler: gcc
+    #  dist: trusty
+    #  sudo: required
+    #- os: linux
+    #  compiler: clang
+    #  dist: trusty
+    #  sudo: required
     - os: linux
       compiler: gcc
       dist: precise
@@ -21,6 +38,17 @@ matrix:
       sudo: required
 
     # macOS
+    - os: osx
+      osx_image: xcode10.2
+      language: objective-c
+      env:
+        - no32bit=1
+    - os: osx
+      osx_image: xcode10.1
+      language: objective-c
+    - os: osx
+      osx_image: xcode10
+      language: objective-c
     - os: osx
       osx_image: xcode9.4
       language: objective-c
@@ -97,10 +125,10 @@ matrix:
         - config=ios
 
     # AmigaOS
-    - os: linux
-      dist: trusty
-      env:
-        - config=amigaos
+    #- os: linux
+    #  dist: trusty
+    #  env:
+    #    - config=amigaos
 
     # Nintendo 3DS
     - os: linux
@@ -207,7 +235,9 @@ script:
   - if [ "$TRAVIS_OS_NAME" = "osx" -a -z "$config" ]; then
             build_mac_32_64() {
                     build $@;
-                    build OBJC="clang -m32" --host=i386-apple-darwin $@;
+                    if [ -z "$no32bit" ]; then
+                            build OBJC="clang -m32" --host=i386-apple-darwin $@;
+                    fi;
             };
 
             if xcodebuild -version | grep 'Xcode 6' >/dev/null; then

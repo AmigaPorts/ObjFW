@@ -20,33 +20,33 @@
 #include <stdlib.h>
 
 #import "OFSet.h"
-#import "OFSet_hashtable.h"
-#import "OFString.h"
 #import "OFArray.h"
-#import "OFXMLElement.h"
+#import "OFMapTableSet.h"
 #import "OFNull.h"
+#import "OFString.h"
+#import "OFXMLElement.h"
 
 static struct {
 	Class isa;
 } placeholder;
 
-@interface OFSet_placeholder: OFSet
+@interface OFSetPlaceholder: OFSet
 @end
 
-@implementation OFSet_placeholder
+@implementation OFSetPlaceholder
 - (instancetype)init
 {
-	return (id)[[OFSet_hashtable alloc] init];
+	return (id)[[OFMapTableSet alloc] init];
 }
 
 - (instancetype)initWithSet: (OFSet *)set
 {
-	return (id)[[OFSet_hashtable alloc] initWithSet: set];
+	return (id)[[OFMapTableSet alloc] initWithSet: set];
 }
 
 - (instancetype)initWithArray: (OFArray *)array
 {
-	return (id)[[OFSet_hashtable alloc] initWithArray: array];
+	return (id)[[OFMapTableSet alloc] initWithArray: array];
 }
 
 - (instancetype)initWithObjects: (id)firstObject, ...
@@ -55,8 +55,8 @@ static struct {
 	va_list arguments;
 
 	va_start(arguments, firstObject);
-	ret = [[OFSet_hashtable alloc] initWithObject: firstObject
-					    arguments: arguments];
+	ret = [[OFMapTableSet alloc] initWithObject: firstObject
+					  arguments: arguments];
 	va_end(arguments);
 
 	return ret;
@@ -65,20 +65,20 @@ static struct {
 - (instancetype)initWithObjects: (id const *)objects
 			  count: (size_t)count
 {
-	return (id)[[OFSet_hashtable alloc] initWithObjects: objects
-						      count: count];
+	return (id)[[OFMapTableSet alloc] initWithObjects: objects
+						    count: count];
 }
 
 - (instancetype)initWithObject: (id)firstObject
 		     arguments: (va_list)arguments
 {
-	return (id)[[OFSet_hashtable alloc] initWithObject: firstObject
-						 arguments: arguments];
+	return (id)[[OFMapTableSet alloc] initWithObject: firstObject
+					       arguments: arguments];
 }
 
 - (instancetype)initWithSerialization: (OFXMLElement *)element
 {
-	return (id)[[OFSet_hashtable alloc] initWithSerialization: element];
+	return (id)[[OFMapTableSet alloc] initWithSerialization: element];
 }
 
 - (instancetype)retain
@@ -105,7 +105,7 @@ static struct {
 + (void)initialize
 {
 	if (self == [OFSet class])
-		placeholder.isa = [OFSet_placeholder class];
+		placeholder.isa = [OFSetPlaceholder class];
 }
 
 + (instancetype)alloc
@@ -255,7 +255,29 @@ static struct {
 			   objects: (id *)objects
 			     count: (int)count
 {
-	OF_UNRECOGNIZED_SELECTOR
+	OFEnumerator *enumerator;
+	int i;
+
+	memcpy(&enumerator, state->extra, sizeof(enumerator));
+
+	if (enumerator == nil) {
+		enumerator = [self objectEnumerator];
+		memcpy(state->extra, &enumerator, sizeof(enumerator));
+	}
+
+	state->itemsPtr = objects;
+	state->mutationsPtr = (unsigned long *)self;
+
+	for (i = 0; i < count; i++) {
+		id object = [enumerator nextObject];
+
+		if (object == nil)
+			return i;
+
+		objects[i] = object;
+	}
+
+	return i;
 }
 
 - (bool)isEqual: (id)object

@@ -59,8 +59,24 @@
 	return ret;
 }
 
-- (void)reset
+- (int)countByEnumeratingWithState: (of_fast_enumeration_state_t *)state
+			   objects: (id *)objects
+			     count: (int)count
 {
-	OF_UNRECOGNIZED_SELECTOR
+	int i;
+
+	state->itemsPtr = objects;
+	state->mutationsPtr = (unsigned long *)self;
+
+	for (i = 0; i < count; i++) {
+		id object = [self nextObject];
+
+		if (object == nil)
+			return i;
+
+		objects[i] = object;
+	}
+
+	return i;
 }
 @end

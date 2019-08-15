@@ -17,7 +17,7 @@
 
 #include "config.h"
 
-#import "ObjFW_RT.h"
+#import "ObjFWRT.h"
 #import "private.h"
 
 #include <exec/libraries.h>
@@ -27,7 +27,7 @@
 
 #define CONCAT_VERSION2(major, minor) #major "." #minor
 #define CONCAT_VERSION(major, minor) CONCAT_VERSION2(major, minor)
-#define VERSION_STRING CONCAT_VERSION(OBJFW_RT_LIB_MAJOR, OBJFW_RT_LIB_MINOR)
+#define VERSION_STRING CONCAT_VERSION(OBJFWRT_LIB_MAJOR, OBJFWRT_LIB_MINOR)
 
 #if defined(OF_AMIGAOS_M68K)
 # define DATA_OFFSET 0x7FFE
@@ -62,72 +62,72 @@ extern const void *_EH_FRAME_BEGINS__;
 extern void *_EH_FRAME_OBJECTS__;
 #endif
 
-extern void __objc_exec_class_m68k(void);
-extern IMP _Nonnull objc_msg_lookup_m68k(void);
-extern IMP _Nonnull objc_msg_lookup_stret_m68k(void);
-extern IMP _Nonnull objc_msg_lookup_super_m68k(void);
-extern IMP _Nonnull objc_msg_lookup_super_stret_m68k(void);
-extern Class _Nullable objc_lookUpClass_m68k(void);
-extern Class _Nullable objc_getClass_m68k(void);
-extern Class _Nonnull objc_getRequiredClass_m68k(void);
-extern Class _Nullable objc_lookup_class_m68k(void);
-extern Class _Nonnull objc_get_class_m68k(void);
-extern void objc_exception_throw_m68k(void);
-extern int objc_sync_enter_m68k(void);
-extern int objc_sync_exit_m68k(void);
-extern id _Nullable objc_getProperty_m68k(void);
-extern void objc_setProperty_m68k(void);
-extern void objc_getPropertyStruct_m68k(void);
-extern void objc_setPropertyStruct_m68k(void);
-extern void objc_enumerationMutation_m68k(void);
-extern int __gnu_objc_personality_sj0_m68k(void);
-extern int __gnu_objc_personality_v0_m68k(void);
-extern id _Nullable objc_retain_m68k(void);
-extern id _Nullable objc_retainBlock_m68k(void);
-extern id _Nullable objc_retainAutorelease_m68k(void);
-extern void objc_release_m68k(void);
-extern id _Nullable objc_autorelease_m68k(void);
-extern id _Nullable objc_autoreleaseReturnValue_m68k(void);
-extern id _Nullable objc_retainAutoreleaseReturnValue_m68k(void);
-extern id _Nullable objc_retainAutoreleasedReturnValue_m68k(void);
-extern id _Nullable objc_storeStrong_m68k(void);
-extern id _Nullable objc_storeWeak_m68k(void);
-extern id _Nullable objc_loadWeakRetained_m68k(void);
-extern id _Nullable objc_initWeak_m68k(void);
-extern void objc_destroyWeak_m68k(void);
-extern id _Nullable objc_loadWeak_m68k(void);
-extern void objc_copyWeak_m68k(void);
-extern void objc_moveWeak_m68k(void);
-extern SEL _Nonnull sel_registerName_m68k(void);
-extern const char *_Nonnull sel_getName_m68k(void);
-extern bool sel_isEqual_m68k(void);
-extern Class _Nonnull objc_allocateClassPair_m68k(void);
-extern void objc_registerClassPair_m68k(void);
-extern unsigned int objc_getClassList_m68k(void);
-extern Class _Nonnull *_Nonnull objc_copyClassList_m68k(void);
-extern bool class_isMetaClass_m68k(void);
-extern const char *_Nullable class_getName_m68k(void);
-extern Class _Nullable class_getSuperclass_m68k(void);
-extern unsigned long class_getInstanceSize_m68k(void);
-extern bool class_respondsToSelector_m68k(void);
-extern bool class_conformsToProtocol_m68k(void);
-extern IMP _Nullable class_getMethodImplementation_m68k(void);
-extern IMP _Nullable class_getMethodImplementation_stret_m68k(void);
-extern const char *_Nullable class_getMethodTypeEncoding_m68k(void);
-extern bool class_addMethod_m68k(void);
-extern IMP _Nullable class_replaceMethod_m68k(void);
-extern Class _Nullable object_getClass_m68k(void);
-extern Class _Nullable object_setClass_m68k(void);
-extern const char *_Nullable object_getClassName_m68k(void);
-extern const char *_Nonnull protocol_getName_m68k(void);
-extern bool protocol_isEqual_m68k(void);
-extern bool protocol_conformsToProtocol_m68k(void);
-extern void objc_exit_m68k(void);
-extern _Nullable objc_uncaught_exception_handler
-    objc_setUncaughtExceptionHandler_m68k(void);
-extern void objc_setForwardHandler_m68k(void);
-extern void objc_setEnumerationMutationHandler_m68k(void);
-extern void objc_zero_weak_references_m68k(void);
+extern bool glue_objc_init(void);
+extern void glue___objc_exec_class(void);
+extern IMP _Nonnull glue_objc_msg_lookup(void);
+extern IMP _Nonnull glue_objc_msg_lookup_stret(void);
+extern IMP _Nonnull glue_objc_msg_lookup_super(void);
+extern IMP _Nonnull glue_objc_msg_lookup_super_stret(void);
+extern Class _Nullable glue_objc_lookUpClass(void);
+extern Class _Nullable glue_objc_getClass(void);
+extern Class _Nonnull glue_objc_getRequiredClass(void);
+extern Class _Nullable glue_objc_lookup_class(void);
+extern Class _Nonnull glue_objc_get_class(void);
+extern void glue_objc_exception_throw(void);
+extern int glue_objc_sync_enter(void);
+extern int glue_objc_sync_exit(void);
+extern id _Nullable glue_objc_getProperty(void);
+extern void glue_objc_setProperty(void);
+extern void glue_objc_getPropertyStruct(void);
+extern void glue_objc_setPropertyStruct(void);
+extern void glue_objc_enumerationMutation(void);
+extern int glue___gnu_objc_personality(void);
+extern id _Nullable glue_objc_retain(void);
+extern id _Nullable glue_objc_retainBlock(void);
+extern id _Nullable glue_objc_retainAutorelease(void);
+extern void glue_objc_release(void);
+extern id _Nullable glue_objc_autorelease(void);
+extern id _Nullable glue_objc_autoreleaseReturnValue(void);
+extern id _Nullable glue_objc_retainAutoreleaseReturnValue(void);
+extern id _Nullable glue_objc_retainAutoreleasedReturnValue(void);
+extern id _Nullable glue_objc_storeStrong(void);
+extern id _Nullable glue_objc_storeWeak(void);
+extern id _Nullable glue_objc_loadWeakRetained(void);
+extern id _Nullable glue_objc_initWeak(void);
+extern void glue_objc_destroyWeak(void);
+extern id _Nullable glue_objc_loadWeak(void);
+extern void glue_objc_copyWeak(void);
+extern void glue_objc_moveWeak(void);
+extern SEL _Nonnull glue_sel_registerName(void);
+extern const char *_Nonnull glue_sel_getName(void);
+extern bool glue_sel_isEqual(void);
+extern Class _Nonnull glue_objc_allocateClassPair(void);
+extern void glue_objc_registerClassPair(void);
+extern unsigned int glue_objc_getClassList(void);
+extern Class _Nonnull *_Nonnull glue_objc_copyClassList(void);
+extern bool glue_class_isMetaClass(void);
+extern const char *_Nullable glue_class_getName(void);
+extern Class _Nullable glue_class_getSuperclass(void);
+extern unsigned long glue_class_getInstanceSize(void);
+extern bool glue_class_respondsToSelector(void);
+extern bool glue_class_conformsToProtocol(void);
+extern IMP _Nullable glue_class_getMethodImplementation(void);
+extern IMP _Nullable glue_class_getMethodImplementation_stret(void);
+extern const char *_Nullable glue_class_getMethodTypeEncoding(void);
+extern bool glue_class_addMethod(void);
+extern IMP _Nullable glue_class_replaceMethod(void);
+extern Class _Nullable glue_object_getClass(void);
+extern Class _Nullable glue_object_setClass(void);
+extern const char *_Nullable glue_object_getClassName(void);
+extern const char *_Nonnull glue_protocol_getName(void);
+extern bool glue_protocol_isEqual(void);
+extern bool glue_protocol_conformsToProtocol(void);
+extern _Nullable objc_uncaught_exception_handler_t
+    glue_objc_setUncaughtExceptionHandler(void);
+extern void glue_objc_setForwardHandler(void);
+extern void glue_objc_setEnumerationMutationHandler(void);
+extern void glue_objc_zero_weak_references(void);
+extern void glue_objc_exit(void);
 
 #ifdef OF_MORPHOS
 const ULONG __abox__ = 1;
@@ -147,16 +147,14 @@ __asm__ (
     "	rts"
 );
 #elif defined(OF_MORPHOS)
+/* All __saveds functions in this file need to use the M68K ABI */
 __asm__ (
     ".section .text\n"
-    ".globl __restore_r13\n"
     ".align 2\n"
     "__restore_r13:\n"
     "	lwz	%r13, 56(%r2)\n"
     "	lwz	%r13, 44(%r13)\n"
     "	blr\n"
-    ".type __restore_r13, @function\n"
-    ".size __restore_r13, .-__restore_r13"
 );
 #endif
 
@@ -188,7 +186,8 @@ getDataSize(void)
 
 #if defined(OF_AMIGAOS_M68K)
 	__asm__ (
-	    "move.l	#___data_size, %0"
+	    "move.l	#___data_size, %0\n\t"
+	    "add.l	#___bss_size, %0"
 	    : "=r"(dataSize)
 	);
 #elif defined(OF_MORPHOS)
@@ -375,15 +374,16 @@ lib_null(void)
 	return NULL;
 }
 
-static bool __saveds
-objc_init_m68k(void)
+bool
+objc_init(unsigned int version, struct objc_libc *libc_, FILE *stdout_,
+    FILE *stderr_)
 {
+#ifdef OF_AMIGAOS_M68K
 	OBJC_M68K_ARG(struct ObjFWRTBase *, base, a6)
-	OBJC_M68K_ARG(unsigned int, version, d0)
-	OBJC_M68K_ARG(struct objc_libc *, libc_, a0)
-	OBJC_M68K_ARG(FILE *, stdout_, a1)
-	OBJC_M68K_ARG(FILE *, stderr_, a2)
-
+#else
+	register struct ObjFWRTBase *r12 __asm__("r12");
+	struct ObjFWRTBase *base = r12;
+#endif
 	uintptr_t *iter, *iter0;
 
 	if (version > 1)
@@ -566,7 +566,75 @@ static CONST_APTR functionTable[] = {
 	(CONST_APTR)lib_close,
 	(CONST_APTR)lib_expunge,
 	(CONST_APTR)lib_null,
-#include "amiga-library-functable.inc"
+#ifdef OF_MORPHOS
+	(CONST_APTR)-1,
+	(CONST_APTR)FUNCARRAY_32BIT_SYSTEMV,
+#endif
+	(CONST_APTR)glue_objc_init,
+	(CONST_APTR)glue___objc_exec_class,
+	(CONST_APTR)glue_objc_msg_lookup,
+	(CONST_APTR)glue_objc_msg_lookup_stret,
+	(CONST_APTR)glue_objc_msg_lookup_super,
+	(CONST_APTR)glue_objc_msg_lookup_super_stret,
+	(CONST_APTR)glue_objc_lookUpClass,
+	(CONST_APTR)glue_objc_getClass,
+	(CONST_APTR)glue_objc_getRequiredClass,
+	(CONST_APTR)glue_objc_lookup_class,
+	(CONST_APTR)glue_objc_get_class,
+	(CONST_APTR)glue_objc_exception_throw,
+	(CONST_APTR)glue_objc_sync_enter,
+	(CONST_APTR)glue_objc_sync_exit,
+	(CONST_APTR)glue_objc_getProperty,
+	(CONST_APTR)glue_objc_setProperty,
+	(CONST_APTR)glue_objc_getPropertyStruct,
+	(CONST_APTR)glue_objc_setPropertyStruct,
+	(CONST_APTR)glue_objc_enumerationMutation,
+	(CONST_APTR)glue___gnu_objc_personality,
+	(CONST_APTR)glue_objc_retain,
+	(CONST_APTR)glue_objc_retainBlock,
+	(CONST_APTR)glue_objc_retainAutorelease,
+	(CONST_APTR)glue_objc_release,
+	(CONST_APTR)glue_objc_autorelease,
+	(CONST_APTR)glue_objc_autoreleaseReturnValue,
+	(CONST_APTR)glue_objc_retainAutoreleaseReturnValue,
+	(CONST_APTR)glue_objc_retainAutoreleasedReturnValue,
+	(CONST_APTR)glue_objc_storeStrong,
+	(CONST_APTR)glue_objc_storeWeak,
+	(CONST_APTR)glue_objc_loadWeakRetained,
+	(CONST_APTR)glue_objc_initWeak,
+	(CONST_APTR)glue_objc_destroyWeak,
+	(CONST_APTR)glue_objc_loadWeak,
+	(CONST_APTR)glue_objc_copyWeak,
+	(CONST_APTR)glue_objc_moveWeak,
+	(CONST_APTR)glue_sel_registerName,
+	(CONST_APTR)glue_sel_getName,
+	(CONST_APTR)glue_sel_isEqual,
+	(CONST_APTR)glue_objc_allocateClassPair,
+	(CONST_APTR)glue_objc_registerClassPair,
+	(CONST_APTR)glue_objc_getClassList,
+	(CONST_APTR)glue_objc_copyClassList,
+	(CONST_APTR)glue_class_isMetaClass,
+	(CONST_APTR)glue_class_getName,
+	(CONST_APTR)glue_class_getSuperclass,
+	(CONST_APTR)glue_class_getInstanceSize,
+	(CONST_APTR)glue_class_respondsToSelector,
+	(CONST_APTR)glue_class_conformsToProtocol,
+	(CONST_APTR)glue_class_getMethodImplementation,
+	(CONST_APTR)glue_class_getMethodImplementation_stret,
+	(CONST_APTR)glue_class_getMethodTypeEncoding,
+	(CONST_APTR)glue_class_addMethod,
+	(CONST_APTR)glue_class_replaceMethod,
+	(CONST_APTR)glue_object_getClass,
+	(CONST_APTR)glue_object_setClass,
+	(CONST_APTR)glue_object_getClassName,
+	(CONST_APTR)glue_protocol_getName,
+	(CONST_APTR)glue_protocol_isEqual,
+	(CONST_APTR)glue_protocol_conformsToProtocol,
+	(CONST_APTR)glue_objc_setUncaughtExceptionHandler,
+	(CONST_APTR)glue_objc_setForwardHandler,
+	(CONST_APTR)glue_objc_setEnumerationMutationHandler,
+	(CONST_APTR)glue_objc_zero_weak_references,
+	(CONST_APTR)glue_objc_exit,
 	(CONST_APTR)-1,
 #ifdef OF_MORPHOS
 	(CONST_APTR)FUNCARRAY_END
@@ -598,15 +666,15 @@ struct Resident resident = {
 	    | RTF_PPC | RTF_EXTENDED
 #endif
 	    ,
-	.rt_Version = OBJFW_RT_LIB_MAJOR,
+	.rt_Version = OBJFWRT_LIB_MAJOR,
 	.rt_Type = NT_LIBRARY,
 	.rt_Pri = 0,
-	.rt_Name = (char *)"objfw_rt.library",
-	.rt_IdString = (char *)"ObjFW_RT " VERSION_STRING
+	.rt_Name = (char *)OBJFWRT_AMIGA_LIB,
+	.rt_IdString = (char *)"ObjFWRT " VERSION_STRING
 	    " \xA9 2008-2019 Jonathan Schleifer",
 	.rt_Init = &init_table,
 #ifdef OF_MORPHOS
-	.rt_Revision = OBJFW_RT_LIB_MINOR,
+	.rt_Revision = OBJFWRT_LIB_MINOR,
 	.rt_Tags = NULL,
 #endif
 };

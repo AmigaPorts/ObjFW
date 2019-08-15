@@ -20,11 +20,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#import "ObjFW_RT.h"
+#import "ObjFWRT.h"
 #import "private.h"
 
 #ifdef OF_HAVE_THREADS
-# import "threading.h"
+# import "mutex.h"
 
 static struct lock_s {
 	id	      object;

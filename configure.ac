@@ -11,7 +11,7 @@ AC_SUBST(BUNDLE_SHORT_VERSION, 0.90)
 
 for i in configure.ac build-aux/m4/*; do
 	AS_IF([test $i -nt configure], [
-		AC_MSG_ERROR([$i is newer than configure! Run autoreconf!])
+		AC_MSG_ERROR([$i is newer than configure! Run ./autogen.sh!])
 	])
 done
 
@@ -27,7 +27,7 @@ check_pedantic="yes"
 
 case "$host" in
 	arm-*-riscos*)
-		AS_IF([test x"$OBJCFLAGS" != x""], [
+		AS_IF([test x"$OBJCFLAGS" = x""], [
 			OBJCFLAGS="-O2 -g"
 		])
 		flags="-mfloat-abi=softfp -mfpu=vfp -mlibscl"
@@ -43,36 +43,47 @@ case "$host" in
 		ac_cv_snprintf_useful_ret="yes"
 		;;
 	m68k-*-amigaos*)
-		AS_IF([test x"$OBJCFLAGS" != x""], [
-			OBJCFLAGS="-O0 -g"
+		AS_IF([test x"$OBJCFLAGS" = x""], [
+			OBJCFLAGS="-O0"
 		])
 		OBJCFLAGS="$OBJCFLAGS -noixemul"
 		OBJFW_OBJCFLAGS="$OBJFW_OBJCFLAGS -noixemul"
+		CPPFLAGS="$CPPFLAGS -D__NO_NET_API"
 		LDFLAGS="$LDFLAGS -noixemul"
 
 		enable_shared="no"
 		enable_threads="no"
-		enable_sockets="no"
 		enable_files="yes"	# Required for reading ENV:
 		supports_amiga_lib="yes"
 		ac_cv_snprintf_useful_ret="yes"
 
 		AS_IF([test x"$enable_amiga_lib" != x"no"], [
+			AC_SUBST(OBJFWRT_AMIGA_LIB, objfwrt68k.library)
 			AC_SUBST(SFDC_TARGET, m68k-amigaos)
+			AC_SUBST(SFD_FILE, amigaos3.sfd)
+			AC_SUBST(SFDC_INLINE_H, inline.h)
 			dnl For 68000, GCC emits calls to helper functions that
 			dnl do not work properly in a library.
-			AC_SUBST(AMIGA_LIB_CFLAGS, "-mcpu=68020 -fbaserel")
+			AC_SUBST(AMIGA_LIB_CFLAGS,
+				"-mcpu=68020 -fbaserel -ffreestanding")
 			AC_SUBST(AMIGA_LIB_LDFLAGS,
 				"-mcpu=68020 -fbaserel -resident -nostartfiles")
 		])
+
+		AC_SUBST(LIBBASES_M, libbases.m)
 		;;
 	powerpc-*-amigaos*)
+		CPPFLAGS="$CPPFLAGS -D__USE_INLINE__"
+
 		enable_shared="no"
 		enable_threads="no"
+		enable_files="yes"	# Required for reading ENV:
+
+		AC_SUBST(LIBBASES_M, libbases.m)
 		;;
 	*-morphos*)
 		AS_IF([test x"$with_ixemul" != x"yes"], [
-			AS_IF([test x"$OBJCFLAGS" != x""], [
+			AS_IF([test x"$OBJCFLAGS" = x""], [
 				OBJCFLAGS="-O2 -g"
 			])
 			OBJCFLAGS="$OBJCFLAGS -noixemul"
@@ -80,15 +91,19 @@ case "$host" in
 			LDFLAGS="$LDFLAGS -noixemul"
 			enable_files="yes"	# Required for reading ENV:
 			supports_amiga_lib="yes"
+			check_pedantic="no"	# Breaks generated inlines
 
 			AS_IF([test x"$enable_amiga_lib" != x"no"], [
-				AC_SUBST(SFDC_TARGET, ppc-morphos)
-				tmp="-mresident32 -fno-builtin"
-				AC_SUBST(AMIGA_LIB_CFLAGS, $tmp)
-				tmp="-mresident32 -nostartfiles -nodefaultlibs"
-				tmp="$tmp -lc"
-				AC_SUBST(AMIGA_LIB_LDFLAGS, $tmp)
+				AC_SUBST(OBJFWRT_AMIGA_LIB, objfwrt.library)
+				AC_SUBST(CVINCLUDE_INLINE_H, inline.h)
+				t="-mresident32 -ffreestanding"
+				AC_SUBST(AMIGA_LIB_CFLAGS, $t)
+				t="-mresident32 -nostartfiles -nodefaultlibs"
+				t="$t -lc"
+				AC_SUBST(AMIGA_LIB_LDFLAGS, $t)
 			])
+
+			AC_SUBST(LIBBASES_M, libbases.m)
 		])
 
 		enable_shared="no"
@@ -111,7 +126,7 @@ case "$host" in
 				[DEVKITPSP is not set! Please set DEVKITPSP.])
 		])
 
-		AS_IF([test x"$OBJCFLAGS" != x""], [
+		AS_IF([test x"$OBJCFLAGS" = x""], [
 			OBJCFLAGS="-O2"
 		])
 		OBJCFLAGS="$OBJCFLAGS -G0"
@@ -269,7 +284,14 @@ AX_CHECK_COMPILER_FLAGS(-std=gnu11, [
 	])
 ])
 
-AX_CHECK_COMPILER_FLAGS(-pipe, [OBJCFLAGS="$OBJCFLAGS -pipe"])
+case "$build_os" in
+	morphos*)
+		# MorphOS 3.10 has a buggy ixemul that does not work with -pipe.
+		;;
+	*)
+		AX_CHECK_COMPILER_FLAGS(-pipe, [OBJCFLAGS="$OBJCFLAGS -pipe"])
+		;;
+esac
 AX_CHECK_COMPILER_FLAGS(-fno-common, [OBJCFLAGS="$OBJCFLAGS -fno-common"])
 AX_CHECK_COMPILER_FLAGS(-Xclang -fno-constant-cfstrings, [
 	flag="-Xclang -fno-constant-cfstrings"
@@ -404,7 +426,8 @@ AC_MSG_CHECKING(whether we need -D_GNU_SOURCE)
 AC_EGREP_CPP(egrep_cpp_yes, [
 	#include <stdlib.h>
 
-	#if defined(__GLIBC__) || defined(__MINGW32__) || defined(__NEWLIB__)
+	#if defined(__GLIBC__) || defined(__MINGW32__) || \
+	    defined(__NEWLIB__) || defined(__MORPHOS__)
 	egrep_cpp_yes
 	#endif
 ], [
@@ -498,35 +521,34 @@ case "$objc_runtime" in
 		AC_SUBST(RUNTIME, "runtime")
 
 		AS_IF([test x"$enable_shared" != x"no"], [
-			AC_SUBST(OBJFW_RT_SHARED_LIB,
-				"${LIB_PREFIX}objfw_rt${LIB_SUFFIX}")
+			AC_SUBST(OBJFWRT_SHARED_LIB,
+				"${LIB_PREFIX}objfwrt${LIB_SUFFIX}")
 		])
 
 		AS_IF([test x"$enable_static" = x"yes"], [
-			AC_SUBST(OBJFW_RT_STATIC_LIB, "libobjfw_rt.a")
+			AC_SUBST(OBJFWRT_STATIC_LIB, "libobjfwrt.a")
 		])
 
 		AS_IF([test x"$build_framework" = x"yes"], [
-			AC_SUBST(OBJFW_RT_FRAMEWORK, "ObjFW_RT.framework")
-			AC_SUBST(RUNTIME_FRAMEWORK_LIBS, "-framework ObjFW_RT")
+			AC_SUBST(OBJFWRT_FRAMEWORK, "ObjFWRT.framework")
+			AC_SUBST(RUNTIME_FRAMEWORK_LIBS, "-framework ObjFWRT")
 		])
 
 		AS_IF([test x"$enable_amiga_lib" != x"no"], [
-			AC_SUBST(OBJFW_RT_AMIGA_LIB, objfw_rt.library)
-			AC_SUBST(RUNTIME_LIBS, "-lobjfw_rt.library")
+			AC_SUBST(RUNTIME_LIBS, "-lobjfwrt.library")
 			AC_SUBST(LINKLIB, linklib)
-			tmp="../src/runtime/linklib/libobjfw_rt.library.a"
-			AC_SUBST(LIBOBJFW_RT_DEP, "$tmp")
-			AC_SUBST(LIBOBJFW_RT_DEP_LVL2, "../$tmp")
+			tmp="../src/runtime/linklib/libobjfwrt.library.a"
+			AC_SUBST(LIBOBJFWRT_DEP, "$tmp")
+			AC_SUBST(LIBOBJFWRT_DEP_LVL2, "../$tmp")
 		], [
-			AC_SUBST(RUNTIME_LIBS, "-lobjfw_rt")
+			AC_SUBST(RUNTIME_LIBS, "-lobjfwrt")
 		])
 
 		AS_IF([test x"$enable_shared" = x"no" \
 				-a x"$enable_amiga_lib" = x"no"], [
-			tmp="../src/runtime/libobjfw_rt.a"
-			AC_SUBST(LIBOBJFW_RT_DEP, "$tmp")
-			AC_SUBST(LIBOBJFW_RT_DEP_LVL2, "../$tmp")
+			tmp="../src/runtime/libobjfwrt.a"
+			AC_SUBST(LIBOBJFWRT_DEP, "$tmp")
+			AC_SUBST(LIBOBJFWRT_DEP_LVL2, "../$tmp")
 		])
 
 		AS_IF([test x"$enable_seluid24" = x"yes"], [
@@ -635,9 +657,9 @@ case "$host_os" in
 			AS_IF([test x"$exception_type" = x"SjLj"], [
 				LDFLAGS="$LDFLAGS -Wl,-U,___gxx_personality_sj0"
 			])
-			AC_SUBST(REEXPORT_RUNTIME, ["-Wl,-reexport-lobjfw_rt"])
+			AC_SUBST(REEXPORT_RUNTIME, ["-Wl,-reexport-lobjfwrt"])
 			AC_SUBST(REEXPORT_RUNTIME_FRAMEWORK,
-				["-Wl,-reexport_framework,ObjFW_RT"])
+				["-Wl,-reexport_framework,ObjFWRT"])
 		])
 
 		AC_CHECK_HEADERS(sysdir.h)
@@ -1178,6 +1200,9 @@ AS_IF([test x"$enable_files" != x"no"], [
 		AC_DEFINE(OF_HAVE_SYMLINK, 1, [Whether we have symlink()])
 	])
 	AC_CHECK_FUNCS([lstat])
+	AC_CHECK_MEMBERS([struct stat.st_birthtime], [], [], [
+		#include <sys/stat.h>
+	])
 
 	old_OBJCFLAGS="$OBJCFLAGS"
 	OBJCFLAGS="$OBJCFLAGS -Werror"
@@ -1207,9 +1232,15 @@ AC_CHECK_FUNCS([strtod_l strtof_l asprintf_l])
 AC_CHECK_HEADERS(sys/utsname.h)
 AC_CHECK_FUNCS(uname)
 
-AC_CHECK_FUNC(pipe, [
-	AC_DEFINE(OF_HAVE_PIPE, 1, [Whether we have pipe()])
-])
+case "$host_os" in
+	amigaos*)
+		;;
+	*)
+		AC_CHECK_FUNC(pipe, [
+			AC_DEFINE(OF_HAVE_PIPE, 1, [Whether we have pipe()])
+		])
+		;;
+esac
 
 AC_ARG_ENABLE(sockets,
 	AS_HELP_STRING([--disable-sockets], [disable socket support]))
@@ -1217,14 +1248,17 @@ AS_IF([test x"$enable_sockets" != x"no"], [
 	AC_DEFINE(OF_HAVE_SOCKETS, 1, [Whether we have sockets])
 	AC_SUBST(USE_SRCS_SOCKETS, '${SRCS_SOCKETS}')
 
-	AC_CHECK_LIB(socket, socket, LIBS="$LIBS -lsocket")
-
 	case "$host_os" in
-		mingw*)
-			LIBS="$LIBS -lws2_32 -liphlpapi"
+		amigaos*)
 			;;
 		haiku*)
 			LIBS="$LIBS -lnetwork"
+			;;
+		mingw*)
+			LIBS="$LIBS -lws2_32 -liphlpapi"
+			;;
+		*)
+			AC_CHECK_LIB(socket, socket, LIBS="$LIBS -lsocket")
 			;;
 	esac
 
@@ -1244,7 +1278,9 @@ AS_IF([test x"$enable_sockets" != x"no"], [
 
 	AC_CHECK_MEMBER([struct sockaddr_in6.sin6_addr], [
 		AC_EGREP_CPP(egrep_cpp_yes, [
+			#ifdef _WIN32
 			typedef int BOOL;
+			#endif
 
 			#ifdef OF_HAVE_SYS_SOCKET_H
 			# include <sys/socket.h>
@@ -1269,7 +1305,9 @@ AS_IF([test x"$enable_sockets" != x"no"], [
 		])
 	], [
 	], [
+		#ifdef _WIN32
 		typedef int BOOL;
+		#endif
 
 		#ifdef OF_HAVE_NETINET_IN_H
 		# include <netinet/in.h>
@@ -1291,44 +1329,44 @@ AS_IF([test x"$enable_sockets" != x"no"], [
 
 	AC_CHECK_FUNCS(kqueue1 kqueue, [
 		AC_DEFINE(HAVE_KQUEUE, 1, [Whether we have kqueue])
-		AC_SUBST(OFKERNELEVENTOBSERVER_KQUEUE_M,
-			"OFKernelEventObserver_kqueue.m")
+		AC_SUBST(OFKQUEUEKERNELEVENTOBSERVER_M,
+			"OFKqueueKernelEventObserver.m")
 		break
 	])
 	AC_CHECK_FUNCS(epoll_create1 epoll_create, [
 		AC_DEFINE(HAVE_EPOLL, 1, [Whether we have epoll])
-		AC_SUBST(OFKERNELEVENTOBSERVER_EPOLL_M,
-			"OFKernelEventObserver_epoll.m")
+		AC_SUBST(OFEPOLLKERNELEVENTOBSERVER_M,
+			"OFEpollKernelEventObserver.m")
 		break
 	])
 
 	AS_IF([test x"$with_wii" = x"yes"], [
 		AC_DEFINE(HAVE_POLL, 1, [Whether we have poll()])
-		AC_SUBST(OFKERNELEVENTOBSERVER_POLL_M,
-			"OFKernelEventObserver_poll.m")
+		AC_SUBST(OFPOLLKERNELEVENTOBSERVER_M,
+			"OFPollKernelEventObserver.m")
 	], [
 		AC_CHECK_HEADERS(poll.h)
 		AC_CHECK_FUNC(poll, [
 			AC_DEFINE(HAVE_POLL, 1, [Whether we have poll()])
-			AC_SUBST(OFKERNELEVENTOBSERVER_POLL_M,
-				"OFKernelEventObserver_poll.m")
+			AC_SUBST(OFPOLLKERNELEVENTOBSERVER_M,
+				"OFPollKernelEventObserver.m")
 		])
 	])
 
 	case "$host_os" in
-		mingw* | morphos*)
+		amigaos* | mingw* | morphos*)
 			AC_DEFINE(HAVE_SELECT, 1,
 				[Whether we have select() or similar])
-			AC_SUBST(OFKERNELEVENTOBSERVER_SELECT_M,
-				"OFKernelEventObserver_select.m")
+			AC_SUBST(OFSELECTKERNELEVENTOBSERVER_M,
+				"OFSelectKernelEventObserver.m")
 			;;
 		*)
 			AC_CHECK_HEADERS(sys/select.h)
 			AC_CHECK_FUNC(select, [
 				AC_DEFINE(HAVE_SELECT, 1,
 					[Whether we have select() or similar])
-				AC_SUBST(OFKERNELEVENTOBSERVER_SELECT_M,
-					"OFKernelEventObserver_select.m")
+				AC_SUBST(OFSELECTKERNELEVENTOBSERVER_M,
+					"OFSelectKernelEventObserver.m")
 			])
 			;;
 	esac
@@ -1417,16 +1455,16 @@ AS_IF([test x"$objc_runtime" = x"Apple runtime"], [
 		AC_SUBST(BRIDGE, "bridge")
 
 		AS_IF([test x"$enable_shared" != x"no"], [
-			AC_SUBST(OBJFW_BRIDGE_SHARED_LIB,
-				"${LIB_PREFIX}objfw_bridge${LIB_SUFFIX}")
+			AC_SUBST(OBJFWBRIDGE_SHARED_LIB,
+				"${LIB_PREFIX}objfwbridge${LIB_SUFFIX}")
 		])
 		AS_IF([test x"$enable_static" = x"yes" \
 		    -o x"$enable_shared" = x"no"], [
-			AC_SUBST(OBJFW_BRIDGE_STATIC_LIB, "libobjfw_bridge.a")
+			AC_SUBST(OBJFWBRIDGE_STATIC_LIB, "libobjfwbridge.a")
 		])
 		AS_IF([test x"$build_framework" = x"yes"], [
-			AC_SUBST(OBJFW_BRIDGE_FRAMEWORK,
-				"ObjFW_Bridge.framework")
+			AC_SUBST(OBJFWBRIDGE_FRAMEWORK,
+				"ObjFWBridge.framework")
 		])
 	])
 ])

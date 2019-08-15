@@ -17,19 +17,25 @@
 
 #include "config.h"
 
-#import "ObjFW_RT.h"
+#import "ObjFWRT.h"
 #import "private.h"
 #import "macros.h"
 
 #include <proto/exec.h>
+
+struct ObjFWRTBase;
 
 #import "inline.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifdef OF_AMIGAOS_M68K
+#if defined(OF_AMIGAOS_M68K)
 # include <stabs.h>
+# define SYM(name) __asm__("_" name)
+#elif defined(OF_MORPHOS)
+# include <constructor.h>
+# define SYM(name) __asm__(name)
 #endif
 
 #ifdef HAVE_SJLJ_EXCEPTIONS
@@ -52,7 +58,7 @@ extern void _Unwind_SjLj_Resume(void *);
 extern void _Unwind_Resume(void *);
 #endif
 extern void __register_frame_info(const void *, void *);
-extern void __deregister_frame_info(const void *);
+extern void *__deregister_frame_info(const void *);
 
 struct Library *ObjFWRTBase;
 void *__objc_class_name_Protocol;
@@ -96,13 +102,14 @@ ctor(void)
 	if (initialized)
 		return;
 
-	if ((ObjFWRTBase = OpenLibrary("objfw_rt.library", 0)) == NULL) {
-		fputs("Failed to open objfw_rt.library!\n", stderr);
+	if ((ObjFWRTBase = OpenLibrary(OBJFWRT_AMIGA_LIB,
+	    OBJFWRT_LIB_MINOR)) == NULL) {
+		fputs("Failed to open " OBJFWRT_AMIGA_LIB "!\n", stderr);
 		abort();
 	}
 
-	if (!objc_init_m68k(1, &libc, stdout, stderr)) {
-		fputs("Failed to initialize objfw_rt.library!\n", stderr);
+	if (!glue_objc_init(1, &libc, stdout, stderr)) {
+		fputs("Failed to initialize " OBJFWRT_AMIGA_LIB "!\n", stderr);
 		abort();
 	}
 
@@ -119,8 +126,17 @@ dtor(void)
 ADD2INIT(ctor, -2);
 ADD2EXIT(dtor, -2);
 #elif defined(OF_MORPHOS)
-CONSTRUCTOR_P(ctor, -2);
-DESTRUCTOR_P(dtor, -2);
+CONSTRUCTOR_P(ObjFWRT, 4000)
+{
+	ctor();
+
+	return 0;
+}
+
+DESTRUCTOR_P(ObjFWRT, 4000)
+{
+	dtor();
+}
 #endif
 
 void
@@ -132,61 +148,61 @@ __objc_exec_class(void *module)
 	 */
 	ctor();
 
-	__objc_exec_class_m68k(module);
+	glue___objc_exec_class(module);
 }
 
 IMP
 objc_msg_lookup(id object, SEL selector)
 {
-	return objc_msg_lookup_m68k(object, selector);
+	return glue_objc_msg_lookup(object, selector);
 }
 
 IMP
 objc_msg_lookup_stret(id object, SEL selector)
 {
-	return objc_msg_lookup_stret_m68k(object, selector);
+	return glue_objc_msg_lookup_stret(object, selector);
 }
 
 IMP
 objc_msg_lookup_super(struct objc_super *super, SEL selector)
 {
-	return objc_msg_lookup_super_m68k(super, selector);
+	return glue_objc_msg_lookup_super(super, selector);
 }
 
 IMP
 objc_msg_lookup_super_stret(struct objc_super *super, SEL selector)
 {
-	return objc_msg_lookup_super_stret_m68k(super, selector);
+	return glue_objc_msg_lookup_super_stret(super, selector);
 }
 
 Class
 objc_lookUpClass(const char *name)
 {
-	return objc_lookUpClass_m68k(name);
+	return glue_objc_lookUpClass(name);
 }
 
 Class
 objc_getClass(const char *name)
 {
-	return objc_getClass_m68k(name);
+	return glue_objc_getClass(name);
 }
 
 Class
 objc_getRequiredClass(const char *name)
 {
-	return objc_getRequiredClass_m68k(name);
+	return glue_objc_getRequiredClass(name);
 }
 
 Class
 objc_lookup_class(const char *name)
 {
-	return objc_lookup_class_m68k(name);
+	return glue_objc_lookup_class(name);
 }
 
 Class
 objc_get_class(const char *name)
 {
-	return objc_get_class_m68k(name);
+	return glue_objc_get_class(name);
 }
 
 void
@@ -208,7 +224,7 @@ objc_exception_throw(id object)
 	((void (*)(id __asm__("a0")))throw)(object);
 	(void)a6;
 #else
-	objc_exception_throw_m68k(object);
+	glue_objc_exception_throw(object);
 #endif
 
 	OF_UNREACHABLE
@@ -217,40 +233,40 @@ objc_exception_throw(id object)
 int
 objc_sync_enter(id object)
 {
-	return objc_sync_enter_m68k(object);
+	return glue_objc_sync_enter(object);
 }
 
 int
 objc_sync_exit(id object)
 {
-	return objc_sync_exit_m68k(object);
+	return glue_objc_sync_exit(object);
 }
 
 id
 objc_getProperty(id self, SEL _cmd, ptrdiff_t offset, bool atomic)
 {
-	return objc_getProperty_m68k(self, _cmd, offset, atomic);
+	return glue_objc_getProperty(self, _cmd, offset, atomic);
 }
 
 void
 objc_setProperty(id self, SEL _cmd, ptrdiff_t offset, id value, bool atomic,
     signed char copy)
 {
-	objc_setProperty_m68k(self, _cmd, offset, value, atomic, copy);
+	glue_objc_setProperty(self, _cmd, offset, value, atomic, copy);
 }
 
 void
 objc_getPropertyStruct(void *dest, const void *src, ptrdiff_t size, bool atomic,
     bool strong)
 {
-	objc_getPropertyStruct_m68k(dest, src, size, atomic, strong);
+	glue_objc_getPropertyStruct(dest, src, size, atomic, strong);
 }
 
 void
 objc_setPropertyStruct(void *dest, const void *src, ptrdiff_t size, bool atomic,
     bool strong)
 {
-	objc_setPropertyStruct_m68k(dest, src, size, atomic, strong);
+	glue_objc_setPropertyStruct(dest, src, size, atomic, strong);
 }
 
 void
@@ -272,7 +288,7 @@ objc_enumerationMutation(id object)
 	((void (*)(id __asm__("a0")))enumerationMutation)(object);
 	(void)a6;
 #else
-	objc_enumerationMutation_m68k(object);
+	glue_objc_enumerationMutation(object);
 #endif
 
 	OF_UNREACHABLE
@@ -283,216 +299,222 @@ int
 __gnu_objc_personality_sj0(int version, int actions, uint64_t exClass,
     void *ex, void *ctx)
 {
-	return __gnu_objc_personality_sj0_m68k(version, actions, &exClass,
-	    ex, ctx);
+# ifdef OF_AMIGAOS_M68K
+	return glue___gnu_objc_personality(version, actions, &exClass, ex, ctx);
+# else
+	return glue___gnu_objc_personality(version, actions, exClass, ex, ctx);
+# endif
 }
 #else
 int
 __gnu_objc_personality_v0(int version, int actions, uint64_t exClass,
     void *ex, void *ctx)
 {
-	return __gnu_objc_personality_v0_m68k(version, actions, &exClass,
-	    ex, ctx);
+# ifdef OF_AMIGAOS_M68K
+	return glue___gnu_objc_personality(version, actions, &exClass, ex, ctx);
+# else
+	return glue___gnu_objc_personality(version, actions, exClass, ex, ctx);
+# endif
 }
 #endif
 
 id
 objc_retain(id object)
 {
-	return objc_retain_m68k(object);
+	return glue_objc_retain(object);
 }
 
 id
 objc_retainBlock(id block)
 {
-	return objc_retainBlock_m68k(block);
+	return glue_objc_retainBlock(block);
 }
 
 id
 objc_retainAutorelease(id object)
 {
-	return objc_retainAutorelease_m68k(object);
+	return glue_objc_retainAutorelease(object);
 }
 
 void
 objc_release(id object)
 {
-	objc_release_m68k(object);
+	glue_objc_release(object);
 }
 
 id
 objc_autorelease(id object)
 {
-	return objc_autorelease_m68k(object);
+	return glue_objc_autorelease(object);
 }
 
 id
 objc_autoreleaseReturnValue(id object)
 {
-	return objc_autoreleaseReturnValue_m68k(object);
+	return glue_objc_autoreleaseReturnValue(object);
 }
 
 id
 objc_retainAutoreleaseReturnValue(id object)
 {
-	return objc_retainAutoreleaseReturnValue_m68k(object);
+	return glue_objc_retainAutoreleaseReturnValue(object);
 }
 
 id
 objc_retainAutoreleasedReturnValue(id object)
 {
-	return objc_retainAutoreleasedReturnValue_m68k(object);
+	return glue_objc_retainAutoreleasedReturnValue(object);
 }
 
 id
 objc_storeStrong(id *object, id value)
 {
-	return objc_storeStrong_m68k(object, value);
+	return glue_objc_storeStrong(object, value);
 }
 
 id
 objc_storeWeak(id *object, id value)
 {
-	return objc_storeWeak_m68k(object, value);
+	return glue_objc_storeWeak(object, value);
 }
 
 id
 objc_loadWeakRetained(id *object)
 {
-	return objc_loadWeakRetained_m68k(object);
+	return glue_objc_loadWeakRetained(object);
 }
 
 id
 objc_initWeak(id *object, id value)
 {
-	return objc_initWeak_m68k(object, value);
+	return glue_objc_initWeak(object, value);
 }
 
 void
 objc_destroyWeak(id *object)
 {
-	objc_destroyWeak_m68k(object);
+	glue_objc_destroyWeak(object);
 }
 
 id
 objc_loadWeak(id *object)
 {
-	return objc_loadWeak_m68k(object);
+	return glue_objc_loadWeak(object);
 }
 
 void
 objc_copyWeak(id *dest, id *src)
 {
-	objc_copyWeak_m68k(dest, src);
+	glue_objc_copyWeak(dest, src);
 }
 
 void
 objc_moveWeak(id *dest, id *src)
 {
-	objc_moveWeak_m68k(dest, src);
+	glue_objc_moveWeak(dest, src);
 }
 
 SEL
 sel_registerName(const char *name)
 {
-	return sel_registerName_m68k(name);
+	return glue_sel_registerName(name);
 }
 
 const char *
 sel_getName(SEL selector)
 {
-	return sel_getName_m68k(selector);
+	return glue_sel_getName(selector);
 }
 
 bool
 sel_isEqual(SEL selector1, SEL selector2)
 {
-	return sel_isEqual_m68k(selector1, selector2);
+	return glue_sel_isEqual(selector1, selector2);
 }
 
 Class
 objc_allocateClassPair(Class superclass, const char *name, size_t extraBytes)
 {
-	return objc_allocateClassPair_m68k(superclass, name, extraBytes);
+	return glue_objc_allocateClassPair(superclass, name, extraBytes);
 }
 
 void
 objc_registerClassPair(Class class)
 {
-	objc_registerClassPair_m68k(class);
+	glue_objc_registerClassPair(class);
 }
 
 unsigned int
 objc_getClassList(Class *buffer, unsigned int count)
 {
-	return objc_getClassList_m68k(buffer, count);
+	return glue_objc_getClassList(buffer, count);
 }
 
 Class *
 objc_copyClassList(unsigned int *length)
 {
-	return objc_copyClassList_m68k(length);
+	return glue_objc_copyClassList(length);
 }
 
 bool
 class_isMetaClass(Class class)
 {
-	return class_isMetaClass_m68k(class);
+	return glue_class_isMetaClass(class);
 }
 
 const char *
 class_getName(Class class)
 {
-	return class_getName_m68k(class);
+	return glue_class_getName(class);
 }
 
 Class
 class_getSuperclass(Class class)
 {
-	return class_getSuperclass_m68k(class);
+	return glue_class_getSuperclass(class);
 }
 
 unsigned long
 class_getInstanceSize(Class class)
 {
-	return class_getInstanceSize_m68k(class);
+	return glue_class_getInstanceSize(class);
 }
 
 bool
 class_respondsToSelector(Class class, SEL selector)
 {
-	return class_respondsToSelector_m68k(class, selector);
+	return glue_class_respondsToSelector(class, selector);
 }
 
 bool
 class_conformsToProtocol(Class class, Protocol *protocol)
 {
-	return class_conformsToProtocol_m68k(class, protocol);
+	return glue_class_conformsToProtocol(class, protocol);
 }
 
 IMP
 class_getMethodImplementation(Class class, SEL selector)
 {
-	return class_getMethodImplementation_m68k(class, selector);
+	return glue_class_getMethodImplementation(class, selector);
 }
 
 IMP
 class_getMethodImplementation_stret(Class class, SEL selector)
 {
-	return class_getMethodImplementation_stret_m68k(class, selector);
+	return glue_class_getMethodImplementation_stret(class, selector);
 }
 
 const char *
 class_getMethodTypeEncoding(Class class, SEL selector)
 {
-	return class_getMethodTypeEncoding_m68k(class, selector);
+	return glue_class_getMethodTypeEncoding(class, selector);
 }
 
 bool
 class_addMethod(Class class, SEL selector, IMP implementation,
     const char *typeEncoding)
 {
-	return class_addMethod_m68k(class, selector, implementation,
+	return glue_class_addMethod(class, selector, implementation,
 	    typeEncoding);
 }
 
@@ -500,72 +522,72 @@ IMP
 class_replaceMethod(Class class, SEL selector, IMP implementation,
     const char *typeEncoding)
 {
-	return class_replaceMethod_m68k(class, selector, implementation,
+	return glue_class_replaceMethod(class, selector, implementation,
 	    typeEncoding);
 }
 
 Class
 object_getClass(id object)
 {
-	return object_getClass_m68k(object);
+	return glue_object_getClass(object);
 }
 
 Class
 object_setClass(id object, Class class)
 {
-	return object_setClass_m68k(object, class);
+	return glue_object_setClass(object, class);
 }
 
 const char *
 object_getClassName(id object)
 {
-	return object_getClassName_m68k(object);
+	return glue_object_getClassName(object);
 }
 
 const char *
 protocol_getName(Protocol *protocol)
 {
-	return protocol_getName_m68k(protocol);
+	return glue_protocol_getName(protocol);
 }
 
 bool
 protocol_isEqual(Protocol *protocol1, Protocol *protocol2)
 {
-	return protocol_isEqual_m68k(protocol1, protocol2);
+	return glue_protocol_isEqual(protocol1, protocol2);
 }
 
 bool
 protocol_conformsToProtocol(Protocol *protocol1, Protocol *protocol2)
 {
-	return protocol_conformsToProtocol_m68k(protocol1, protocol2);
+	return glue_protocol_conformsToProtocol(protocol1, protocol2);
 }
 
-void
-objc_exit(void)
+objc_uncaught_exception_handler_t
+objc_setUncaughtExceptionHandler(objc_uncaught_exception_handler_t handler)
 {
-	objc_exit_m68k();
-}
-
-objc_uncaught_exception_handler
-objc_setUncaughtExceptionHandler(objc_uncaught_exception_handler handler)
-{
-	return objc_setUncaughtExceptionHandler_m68k(handler);
+	return glue_objc_setUncaughtExceptionHandler(handler);
 }
 
 void
 objc_setForwardHandler(IMP forward, IMP stretForward)
 {
-	objc_setForwardHandler_m68k(forward, stretForward);
+	glue_objc_setForwardHandler(forward, stretForward);
 }
 
 void
-objc_setEnumerationMutationHandler(objc_enumeration_mutation_handler handler)
+objc_setEnumerationMutationHandler(objc_enumeration_mutation_handler_t handler)
 {
-	objc_setEnumerationMutationHandler_m68k(handler);
+	glue_objc_setEnumerationMutationHandler(handler);
 }
 
 void
 objc_zero_weak_references(id value)
 {
-	objc_zero_weak_references_m68k(value);
+	glue_objc_zero_weak_references(value);
+}
+
+void
+objc_exit(void)
+{
+	glue_objc_exit();
 }

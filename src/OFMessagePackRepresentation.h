@@ -22,7 +22,7 @@ OF_ASSUME_NONNULL_BEGIN
 @class OFData;
 
 /*!
- * @protocol OFMessagePackRepresentation
+ * @protocol OFMessagePackRepresentation \
  *	     OFMessagePackRepresentation.h ObjFW/OFMessagePackRepresentation.h
  *
  * @brief A protocol implemented by classes that support encoding to a

@@ -29,6 +29,7 @@
 #import "OFString.h"
 
 #import "OFException.h"  /* For some E* -> WSAE* defines */
+#import "OFInitializationFailedException.h"
 #import "OFInvalidArgumentException.h"
 #import "OFInvalidFormatException.h"
 #import "OFLockFailedException.h"
@@ -37,7 +38,16 @@
 #import "socket.h"
 #import "socket_helpers.h"
 #ifdef OF_HAVE_THREADS
-# include "threading.h"
+# ifndef OF_AMIGAOS
+#  import "mutex.h"
+# else
+#  import "tlskey.h"
+# endif
+#endif
+#include "once.h"
+
+#ifdef OF_AMIGAOS
+# include <proto/exec.h>
 #endif
 
 #ifdef OF_NINTENDO_3DS
@@ -45,23 +55,62 @@
 # include <3ds/services/soc.h>
 #endif
 
-#ifdef OF_HAVE_THREADS
+#if defined(OF_HAVE_THREADS) && !defined(OF_AMIGAOS)
 static of_mutex_t mutex;
 #endif
+#ifndef OF_AMIGAOS
 static bool initSuccessful = false;
+#else
+# ifdef OF_HAVE_THREADS
+of_tlskey_t of_socket_base_key;
+#  ifdef OF_AMIGAOS4
+of_tlskey_t of_socket_interface_key;
+#  endif
+# else
+struct Library *SocketBase;
+#  ifdef OF_AMIGAOS4
+struct SocketIFace *ISocket = NULL;
+#  endif
+# endif
+#endif
 
+#if defined(OF_HAVE_THREADS) && defined(OF_AMIGAOS)
+OF_CONSTRUCTOR()
+{
+	if (!of_tlskey_new(&of_socket_base_key))
+		@throw [OFInitializationFailedException exception];
+
+# ifdef OF_AMIGAOS4
+	if (!of_tlskey_new(&of_socket_interface_key))
+		@throw [OFInitializationFailedException exception];
+# endif
+}
+#endif
+
+#if !defined(OF_AMIGAOS) || !defined(OF_HAVE_THREADS)
 static void
 init(void)
 {
-#if defined(OF_WINDOWS)
+# if defined(OF_WINDOWS)
 	WSADATA wsa;
 
 	if (WSAStartup(MAKEWORD(2, 0), &wsa))
 		return;
-#elif defined(OF_WII)
+# elif defined(OF_AMIGAOS)
+	if ((SocketBase = OpenLibrary("bsdsocket.library", 4)) == NULL)
+		return;
+
+#  ifdef OF_AMIGAOS4
+	if ((ISocket = (struct SocketIFace *)
+	    GetInterface(SocketBase, "main", 1, NULL)) == NULL) {
+		CloseLibrary(SocketBase);
+		return;
+	}
+#  endif
+# elif defined(OF_WII)
 	if (net_init() < 0)
 		return;
-#elif defined(OF_NINTENDO_3DS)
+# elif defined(OF_NINTENDO_3DS)
 	void *ctx;
 
 	if ((ctx = memalign(0x1000, 0x100000)) == NULL)
@@ -71,44 +120,108 @@ init(void)
 		return;
 
 	atexit((void (*)(void))socExit);
-#endif
+# endif
 
-#ifdef OF_HAVE_THREADS
+# if defined(OF_HAVE_THREADS) && !defined(OF_AMIGAOS)
 	if (!of_mutex_new(&mutex))
 		return;
 
-# ifdef OF_WII
+#  ifdef OF_WII
 	if (!of_spinlock_new(&spinlock))
 		return;
+#  endif
 # endif
-#endif
 
 	initSuccessful = true;
 }
 
-bool
-of_socket_init()
+# ifdef OF_AMIGAOS
+OF_DESTRUCTOR()
 {
-#ifdef OF_HAVE_THREADS
-	static of_once_t onceControl = OF_ONCE_INIT;
-	of_once(&onceControl, init);
-#else
-	static bool initialized = false;
-	if (!initialized) {
-		init();
-		initialized = true;
-	}
+#  ifdef OF_AMIGAOS4
+	if (ISocket != NULL)
+		DropInterface((struct Interface *)ISocket);
+#  endif
+
+	if (SocketBase != NULL)
+		CloseLibrary(SocketBase);
+}
+# endif
 #endif
 
+bool
+of_socket_init(void)
+{
+#if !defined(OF_AMIGAOS) || !defined(OF_HAVE_THREADS)
+	static of_once_t onceControl = OF_ONCE_INIT;
+	of_once(&onceControl, init);
+
 	return initSuccessful;
+#else
+	struct Library *socketBase;
+# ifdef OF_AMIGAOS4
+	struct SocketIFace *socketInterface;
+# endif
+
+# ifdef OF_AMIGAOS4
+	if ((socketInterface = of_tlskey_get(of_socket_interface_key)) != NULL)
+# else
+	if ((socketBase = of_tlskey_get(of_socket_base_key)) != NULL)
+# endif
+		return true;
+
+	if ((socketBase = OpenLibrary("bsdsocket.library", 4)) == NULL)
+		return false;
+
+# ifdef OF_AMIGAOS4
+	if ((socketInterface = (struct SocketIFace *)
+	    GetInterface(socketBase, "main", 1, NULL)) == NULL) {
+		CloseLibrary(socketBase);
+		return false;
+	}
+# endif
+
+	if (!of_tlskey_set(of_socket_base_key, socketBase)) {
+		CloseLibrary(socketBase);
+# ifdef OF_AMIGAOS4
+		DropInterface((struct Interface *)socketInterface);
+# endif
+		return false;
+	}
+
+# ifdef OF_AMIGAOS4
+	if (!of_tlskey_set(of_socket_interface_key, socketInterface)) {
+		CloseLibrary(socketBase);
+		DropInterface((struct Interface *)socketInterface);
+		return false;
+	}
+# endif
+
+	return true;
+#endif
 }
+
+#if defined(OF_HAVE_THREADS) && defined(OF_AMIGAOS)
+void
+of_socket_deinit(void)
+{
+	struct Library *socketBase = of_tlskey_get(of_socket_base_key);
+# ifdef OF_AMIGAOS4
+	struct SocketIFace *socketInterface =
+	    of_tlskey_get(of_socket_interface_key);
+
+	if (socketInterface != NULL)
+		DropInterface((struct Interface *)socketInterface);
+# endif
+	if (socketBase != NULL)
+		CloseLibrary(socketBase);
+}
+#endif
 
 int
 of_socket_errno()
 {
-#ifndef OF_WINDOWS
-	return errno;
-#else
+#if defined(OF_WINDOWS)
 	switch (WSAGetLastError()) {
 	case WSAEACCES:
 		return EACCES;
@@ -199,6 +312,10 @@ of_socket_errno()
 	}
 
 	return 0;
+#elif defined(OF_AMIGAOS)
+	return Errno();
+#else
+	return errno;
 #endif
 }
 
@@ -209,7 +326,7 @@ of_getsockname(of_socket_t sock, struct sockaddr *restrict addr,
 {
 	int ret;
 
-# ifdef OF_HAVE_THREADS
+# if defined(OF_HAVE_THREADS) && !defined(OF_AMIGAOS)
 	if (!of_mutex_lock(&mutex))
 		@throw [OFLockFailedException exception];
 
@@ -217,7 +334,7 @@ of_getsockname(of_socket_t sock, struct sockaddr *restrict addr,
 
 	ret = getsockname(sock, addr, addrLen);
 
-# ifdef OF_HAVE_THREADS
+# if defined(OF_HAVE_THREADS) && !defined(OF_AMIGAOS)
 	if (!of_mutex_unlock(&mutex))
 		@throw [OFUnlockFailedException exception];
 # endif

@@ -16,6 +16,7 @@
  */
 
 #import "OFObject.h"
+#import "OFASN1DERRepresentation.h"
 #import "OFASN1Value.h"
 
 OF_ASSUME_NONNULL_BEGIN
@@ -25,7 +26,7 @@ OF_ASSUME_NONNULL_BEGIN
 /*!
  * @brief An ASN.1 BitString.
  */
-@interface OFASN1BitString: OFObject
+@interface OFASN1BitString: OFObject <OFASN1DERRepresentation>
 {
 	OFData *_bitStringValue;
 	size_t _bitStringLength;

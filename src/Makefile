@@ -36,6 +36,7 @@ SRCS = OFASN1BitString.m		\
        OFDate.m				\
        OFDictionary.m			\
        OFEnumerator.m			\
+       OFFileManager.m			\
        OFGZIPStream.m			\
        OFHMAC.m				\
        OFInflate64Stream.m		\
@@ -120,6 +121,7 @@ SRCS = OFASN1BitString.m		\
        huffman_tree.m			\
        of_asprintf.m			\
        of_strptime.m			\
+       once.m				\
        pbkdf2.m				\
        scrypt.m				\
        ${UNICODE_M}			\
@@ -129,7 +131,6 @@ SRCS = OFASN1BitString.m		\
        ${USE_SRCS_THREADS}		\
        ${USE_SRCS_WINDOWS}
 SRCS_FILES = OFFile.m			\
-	     OFFileManager.m		\
 	     OFINICategory.m		\
 	     OFINIFile.m		\
 	     OFSettings.m		\
@@ -151,8 +152,11 @@ SRCS_THREADS = OFCondition.m		\
 	       OFMutex.m		\
 	       OFRecursiveMutex.m	\
 	       OFThreadPool.m		\
-	       threading.m
-SRCS_WINDOWS = OFStdIOStream_Win32Console.m	\
+	       condition.m		\
+	       mutex.m			\
+	       thread.m			\
+	       tlskey.m
+SRCS_WINDOWS = OFWin32ConsoleStdIOStream.m	\
 	       OFWindowsRegistryKey.m
 
 INCLUDES_ATOMIC = atomic.h			\
@@ -163,6 +167,7 @@ INCLUDES_ATOMIC = atomic.h			\
 		  atomic_sync_builtins.h	\
 		  atomic_x86.h
 INCLUDES := ${SRCS:.m=.h}			\
+	    OFASN1DERRepresentation.h		\
 	    OFCollection.h			\
 	    OFCryptoHash.h			\
 	    OFJSONRepresentation.h		\
@@ -181,39 +186,40 @@ INCLUDES := ${SRCS:.m=.h}			\
 	    platform.h				\
 	    ${USE_INCLUDES_ATOMIC}
 
-SRCS += OFArray_adjacent.m		\
-	OFArray_adjacentSubarray.m	\
-	OFArray_subarray.m		\
-	OFCharacterSet_bitset.m		\
-	OFCharacterSet_invertedSet.m	\
-	OFCharacterSet_range.m		\
-	OFCountedSet_hashtable.m	\
-	OFDictionary_hashtable.m	\
-	OFLHAArchive_LHStream.m		\
-	OFMutableArray_adjacent.m	\
-	OFMutableDictionary_hashtable.m	\
-	OFMutableSet_hashtable.m	\
-	OFMutableString_UTF8.m		\
-	OFSet_hashtable.m		\
-	OFString_UTF8.m			\
-	OFValue_bytes.m			\
-	OFValue_dimension.m		\
-	OFValue_nonretainedObject.m	\
-	OFValue_point.m			\
-	OFValue_pointer.m		\
-	OFValue_range.m			\
-	OFValue_rectangle.m		\
+SRCS += OFAdjacentArray.m		\
+	OFAdjacentSubarray.m		\
+	OFBitSetCharacterSet.m		\
+	OFBytesValue.m			\
+	OFCountedMapTableSet.m		\
+	OFDimensionValue.m		\
+	OFInvertedCharacterSet.m	\
+	OFLHADecompressingStream.m	\
+	OFMapTableDictionary.m		\
+	OFMapTableSet.m			\
+	OFMutableAdjacentArray.m	\
+	OFMutableMapTableDictionary.m	\
+	OFMutableMapTableSet.m		\
+	OFMutableUTF8String.m		\
+	OFNonretainedObjectValue.m	\
+	OFPointValue.m			\
+	OFPointerValue.m		\
+	OFRangeCharacterSet.m		\
+	OFRangeValue.m			\
+	OFRectangleValue.m		\
+	OFSubarray.m			\
+	OFUTF8String.m			\
 	${AUTORELEASE_M}		\
 	${FOUNDATION_COMPAT_M}		\
-	${INSTANCE_M}
-SRCS_FILES += OFSettings_INIFile.m	\
-	      OFURLHandler_file.m
-SRCS_SOCKETS += OFKernelEventObserver.m			\
-		${OFKERNELEVENTOBSERVER_EPOLL_M}	\
-		${OFKERNELEVENTOBSERVER_KQUEUE_M}	\
-		${OFKERNELEVENTOBSERVER_POLL_M}		\
-		${OFKERNELEVENTOBSERVER_SELECT_M}	\
-		OFURLHandler_HTTP.m
+	${INSTANCE_M}			\
+	${LIBBASES_M}
+SRCS_FILES += OFFileURLHandler.m	\
+	      OFINIFileSettings.m
+SRCS_SOCKETS += OFHTTPURLHandler.m			\
+		OFKernelEventObserver.m			\
+		${OFEPOLLKERNELEVENTOBSERVER_M}		\
+		${OFKQUEUEKERNELEVENTOBSERVER_M}	\
+		${OFPOLLKERNELEVENTOBSERVER_M}		\
+		${OFSELECTKERNELEVENTOBSERVER_M}
 
 OBJS_EXTRA = ${RUNTIME_RUNTIME_A}	\
 	     ${EXCEPTIONS_EXCEPTIONS_A} \

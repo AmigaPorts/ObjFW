@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#import "ObjFW_RT.h"
+#import "ObjFWRT.h"
 #import "private.h"
 
 struct objc_hashtable_bucket objc_deleted_bucket;
@@ -100,7 +100,7 @@ resize(struct objc_hashtable *table, uint32_t count)
 	if (count < table->count && newSize < 16)
 		return;
 
-	if ((newData = calloc(newSize, sizeof(sizeof(*newData)))) == NULL)
+	if ((newData = calloc(newSize, sizeof(*newData))) == NULL)
 		OBJC_ERROR("Not enough memory to resize hash table!");
 
 	for (uint32_t i = 0; i < table->size; i++) {

@@ -19,8 +19,9 @@
 
 #import "TestsAppDelegate.h"
 
-#import "OFMutableSet_hashtable.h"
-#import "OFSet_hashtable.h"
+#import "OFSet.h"
+#import "OFMapTableSet.h"
+#import "OFMutableMapTableSet.h"
 
 static OFString *module = nil;
 
@@ -33,6 +34,7 @@ static OFString *module = nil;
 @interface SimpleMutableSet: OFMutableSet
 {
 	OFMutableSet *_set;
+	unsigned long _mutations;
 }
 @end
 
@@ -116,15 +118,6 @@ static OFString *module = nil;
 {
 	return [_set objectEnumerator];
 }
-
-- (int)countByEnumeratingWithState: (of_fast_enumeration_state_t *)state
-			   objects: (id *)objects
-			     count: (int)count
-{
-	return [_set countByEnumeratingWithState: state
-					 objects: objects
-					   count: count];
-}
 @end
 
 @implementation SimpleMutableSet
@@ -136,12 +129,35 @@ static OFString *module = nil;
 
 - (void)addObject: (id)object
 {
+	bool existed = [self containsObject: object];
+
 	[_set addObject: object];
+
+	if (existed)
+		_mutations++;
 }
 
 - (void)removeObject: (id)object
 {
+	bool existed = [self containsObject: object];
+
 	[_set removeObject: object];
+
+	if (existed)
+		_mutations++;
+}
+
+- (int)countByEnumeratingWithState: (of_fast_enumeration_state_t *)state
+			   objects: (id *)objects
+			     count: (int)count
+{
+	int ret = [_set countByEnumeratingWithState: state
+					    objects: objects
+					      count: count];
+
+	state->mutationsPtr = &_mutations;
+
+	return ret;
 }
 @end
 
@@ -276,8 +292,8 @@ static OFString *module = nil;
 	[self setTestsWithClass: [SimpleSet class]
 		   mutableClass: [SimpleMutableSet class]];
 
-	module = @"OFSet_hashtable";
-	[self setTestsWithClass: [OFSet_hashtable class]
-		   mutableClass: [OFMutableSet_hashtable class]];
+	module = @"OFMapTableSet";
+	[self setTestsWithClass: [OFMapTableSet class]
+		   mutableClass: [OFMutableMapTableSet class]];
 }
 @end

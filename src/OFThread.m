@@ -33,11 +33,6 @@
 #include "platform.h"
 
 #ifdef OF_AMIGAOS
-# ifdef OF_AMIGAOS4
-#  define __USE_INLINE__
-#  define __NOLIBBASE__
-#  define __NOGLOBALIFACE__
-# endif
 # include <proto/exec.h>
 # include <proto/dos.h>
 #endif
@@ -93,23 +88,11 @@
 # define lrint(x) rint(x)
 #endif
 
-#ifdef OF_AMIGAOS4
-extern struct ExecIFace *IExec;
-static struct Library *DOSBase = NULL;
-static struct DOSIFace *IDOS = NULL;
-
-OF_DESTRUCTOR()
-{
-	if (IDOS != NULL)
-		DropInterface(IDOS);
-
-	if (DOSBase != NULL)
-		CloseLibrary(DOSBase);
-}
-#endif
-
 #if defined(OF_HAVE_THREADS)
-# import "threading.h"
+# import "tlskey.h"
+# if defined(OF_AMIGAOS) && defined(OF_HAVE_SOCKETS)
+#  import "socket.h"
+# endif
 
 static of_tlskey_t threadSelfKey;
 static OFThread *mainThread;
@@ -133,23 +116,37 @@ callMain(id object)
 	else
 		of_thread_set_name(object_getClassName(thread));
 
+#if defined(OF_AMIGAOS) && defined(OF_HAVE_SOCKETS)
+	if (thread.supportsSockets)
+		if (!of_socket_init())
+			@throw [OFInitializationFailedException
+			    exceptionWithClass: thread.class];
+#endif
+
 	/*
 	 * Nasty workaround for thread implementations which can't return a
-	 * pointer on join.
+	 * pointer on join, or don't have a way to exit a thread.
 	 */
+	if (setjmp(thread->_exitEnv) == 0) {
 # ifdef OF_HAVE_BLOCKS
-	if (thread->_threadBlock != NULL)
-		thread->_returnValue = [thread->_threadBlock() retain];
-	else
+		if (thread->_threadBlock != NULL)
+			thread->_returnValue = [thread->_threadBlock() retain];
+		else
 # endif
-		thread->_returnValue = [[thread main] retain];
+			thread->_returnValue = [[thread main] retain];
+	}
 
 	[thread handleTermination];
 
-	thread->_running = OF_THREAD_WAITING_FOR_JOIN;
-
 	objc_autoreleasePoolPop(thread->_pool);
 	[OFAutoreleasePool of_handleThreadTermination];
+
+#if defined(OF_AMIGAOS) && defined(OF_HAVE_SOCKETS)
+	if (thread.supportsSockets)
+		of_socket_deinit();
+#endif
+
+	thread->_running = OF_THREAD_WAITING_FOR_JOIN;
 
 	[thread release];
 }
@@ -207,21 +204,6 @@ static OFDNSResolver *DNSResolver;
 		thread->_threadDictionary = [[OFMutableDictionary alloc] init];
 
 	return thread->_threadDictionary;
-}
-#elif defined(OF_AMIGAOS4)
-+ (void)initialize
-{
-	if (self != [OFThread class])
-		return;
-
-	if ((DOSBase = OpenLibrary("dos.library", 36)) == NULL)
-		@throw [OFInitializationFailedException
-		    exceptionWithClass: self];
-
-	if ((IDOS = (struct DOSIFace *)
-	    GetInterface(DOSBase, "main", 1, NULL)) == NULL)
-		@throw [OFInitializationFailedException
-		    exceptionWithClass: self];
 }
 #endif
 
@@ -327,20 +309,12 @@ static OFDNSResolver *DNSResolver;
 {
 	OFThread *thread = of_tlskey_get(threadSelfKey);
 
-	if (thread != nil) {
-		thread->_returnValue = [object retain];
+	OF_ENSURE(thread != nil);
 
-		[thread handleTermination];
+	thread->_returnValue = [object retain];
+	longjmp(thread->_exitEnv, 1);
 
-		thread->_running = OF_THREAD_WAITING_FOR_JOIN;
-		objc_autoreleasePoolPop(thread->_pool);
-	}
-
-	[OFAutoreleasePool of_handleThreadTermination];
-
-	[thread release];
-
-	of_thread_exit();
+	OF_UNREACHABLE
 }
 
 + (void)setName: (OFString *)name
@@ -363,6 +337,7 @@ static OFDNSResolver *DNSResolver;
 {
 	mainThread = [[OFThread alloc] init];
 	mainThread->_thread = of_thread_current();
+	mainThread->_running = OF_THREAD_RUNNING;
 
 	if (!of_tlskey_set(threadSelfKey, mainThread))
 		@throw [OFInitializationFailedException
@@ -504,6 +479,20 @@ static OFDNSResolver *DNSResolver;
 		    exceptionWithThread: self];
 
 	_attr.stackSize = stackSize;
+}
+
+- (bool)supportsSockets
+{
+	return _supportsSockets;
+}
+
+- (void)setSupportsSockets: (bool)supportsSockets
+{
+	if (_running == OF_THREAD_RUNNING)
+		@throw [OFThreadStillRunningException
+		    exceptionWithThread: self];
+
+	_supportsSockets = supportsSockets;
 }
 
 - (void)dealloc

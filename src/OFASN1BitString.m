@@ -44,7 +44,7 @@
 
 	@try {
 		if (bitStringValue.count * bitStringValue.itemSize !=
-		    bitStringLength / 8)
+		    OF_ROUND_UP_POW2(8, bitStringLength) / 8)
 			@throw [OFInvalidFormatException exception];
 
 		_bitStringValue = [bitStringValue copy];
@@ -67,7 +67,7 @@
 	size_t bitStringLength;
 
 	@try {
-		unsigned char lastByteBits;
+		unsigned char unusedBits;
 		size_t count = DEREncodedContents.count;
 
 		if (tagClass != OF_ASN1_TAG_CLASS_UNIVERSAL ||
@@ -77,19 +77,28 @@
 		if (DEREncodedContents.itemSize != 1 || count == 0)
 			@throw [OFInvalidFormatException exception];
 
-		lastByteBits =
+		unusedBits =
 		    *(unsigned char *)[DEREncodedContents itemAtIndex: 0];
 
-		if (count == 1 && lastByteBits != 0)
+		if (unusedBits > 7)
 			@throw [OFInvalidFormatException exception];
 
-		if (SIZE_MAX / 8 < count - 1 ||
-		    SIZE_MAX - (count - 1) * 8 < lastByteBits)
+		/*
+		 * Can't have any bits of the last byte unused if we have no
+		 * byte.
+		 */
+		if (count == 1 && unusedBits != 0)
+			@throw [OFInvalidFormatException exception];
+
+		if (SIZE_MAX / 8 < count - 1)
 			@throw [OFOutOfRangeException exception];
 
-		bitStringLength = (count - 1) * 8 + lastByteBits;
+		bitStringLength = (count - 1) * 8;
 		bitStringValue = [[DEREncodedContents
 		    subdataWithRange: of_range(1, count - 1)] copy];
+
+		if (unusedBits != 0)
+			bitStringLength -= unusedBits;
 	} @catch (id e) {
 		[self release];
 		@throw e;
@@ -113,6 +122,34 @@
 	[_bitStringValue release];
 
 	[super dealloc];
+}
+
+- (OFData *)ASN1DERRepresentation
+{
+	size_t bitStringValueCount = [_bitStringValue count];
+	size_t roundedUpLength = OF_ROUND_UP_POW2(8, _bitStringLength);
+	unsigned char unusedBits = roundedUpLength - _bitStringLength;
+	unsigned char header[] = {
+		OF_ASN1_TAG_NUMBER_BIT_STRING,
+		bitStringValueCount + 1,
+		unusedBits
+	};
+	OFMutableData *data;
+
+	if (bitStringValueCount + 1 > UINT8_MAX ||
+	    bitStringValueCount != roundedUpLength / 8)
+		@throw [OFInvalidFormatException exception];
+
+	data = [OFMutableData
+	    dataWithCapacity: sizeof(header) + bitStringValueCount];
+	[data addItems: header
+		 count: sizeof(header)];
+	[data addItems: [_bitStringValue items]
+		 count: bitStringValueCount];
+
+	[data makeImmutable];
+
+	return data;
 }
 
 - (bool)isEqual: (id)object

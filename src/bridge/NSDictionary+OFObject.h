@@ -21,6 +21,8 @@
 
 OF_ASSUME_NONNULL_BEGIN
 
+@class OFDictionary OF_GENERIC(KeyType, ObjectType);
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,11 +33,12 @@ extern int _NSDictionary_OFObject_reference;
 
 /*!
  * @category NSDictionary (OFObject) \
- *	     NSDictionary+OFObject.h ObjFW-Bridge/NSDictionary+OFObject.h
+ *	     NSDictionary+OFObject.h ObjFWBridge/NSDictionary+OFObject.h
  *
  * @brief Support for bridging NSDictionaries to OFDictionaries.
  */
 @interface NSDictionary (OFObject) <NSBridging>
+@property (readonly, nonatomic) OFDictionary *OFObject;
 @end
 
 OF_ASSUME_NONNULL_END

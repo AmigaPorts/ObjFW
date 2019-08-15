@@ -37,9 +37,9 @@
 
 #ifdef OF_OBJFW_RUNTIME
 # ifdef OF_COMPILING_OBJFW
-#  import "ObjFW_RT.h"
+#  import "ObjFWRT.h"
 # else
-#  import <ObjFW_RT/ObjFW_RT.h>
+#  import <ObjFWRT/ObjFWRT.h>
 # endif
 #endif
 #ifdef OF_APPLE_RUNTIME
@@ -93,8 +93,8 @@
 # define OF_WEAK_REF(sym) __attribute__((__weakref__(sym)))
 #else
 # define OF_INLINE inline
-# define OF_LIKELY(cond) cond
-# define OF_UNLIKELY(cond) cond
+# define OF_LIKELY(cond) (cond)
+# define OF_UNLIKELY(cond) (cond)
 # define OF_CONST_FUNC
 # define OF_NO_RETURN_FUNC
 # define OF_WEAK_REF(sym)

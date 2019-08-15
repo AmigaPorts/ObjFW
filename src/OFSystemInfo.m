@@ -28,11 +28,14 @@
 #ifdef HAVE_SYS_UTSNAME_H
 # include <sys/utsname.h>
 #endif
-#ifdef OF_MACOS
+#if defined(OF_MACOS) || defined(OF_NETBSD)
 # include <sys/sysctl.h>
 #endif
 
-#ifdef OF_MORPHOS
+#if defined(OF_AMIGAOS4)
+# include <exec/exectags.h>
+# include <proto/exec.h>
+#elif defined(OF_MORPHOS)
 # include <exec/system.h>
 # include <proto/exec.h>
 #endif
@@ -46,9 +49,7 @@
 
 #import "OFNotImplementedException.h"
 
-#ifdef OF_HAVE_THREADS
-# import "threading.h"
-#endif
+#import "once.h"
 
 #if defined(OF_MACOS) || defined(OF_IOS)
 # ifdef HAVE_SYSDIR_H
@@ -332,32 +333,16 @@ x86_cpuid(uint32_t eax, uint32_t ecx)
 
 + (OFString *)operatingSystemName
 {
-#ifdef OF_HAVE_THREADS
 	static of_once_t onceControl = OF_ONCE_INIT;
 	of_once(&onceControl, initOperatingSystemName);
-#else
-	static bool initialized = false;
-	if (!initialized) {
-		initOperatingSystemName();
-		initialized = true;
-	}
-#endif
 
 	return operatingSystemName;
 }
 
 + (OFString *)operatingSystemVersion
 {
-#ifdef OF_HAVE_THREADS
 	static of_once_t onceControl = OF_ONCE_INIT;
 	of_once(&onceControl, initOperatingSystemVersion);
-#else
-	static bool initialized = false;
-	if (!initialized) {
-		initOperatingSystemVersion();
-		initialized = true;
-	}
-#endif
 
 	return operatingSystemVersion;
 }
@@ -564,6 +549,38 @@ x86_cpuid(uint32_t eax, uint32_t ecx)
 #endif
 }
 
++ (OFString *)CPUModel
+{
+#if defined(OF_MACOS) || defined(OF_NETBSD)
+	char value[256];
+	size_t length = sizeof(value);
+
+# if defined(OF_MACOS)
+	if (sysctlbyname("machdep.cpu.brand_string",
+# elif defined(OF_NETBSD)
+	if (sysctlbyname("machdep.cpu_brand",
+# endif
+	    &value, &length, NULL, 0) != 0)
+		return nil;
+
+	return [OFString stringWithCString: value
+				  encoding: OF_STRING_ENCODING_ASCII];
+#elif defined(OF_AMIGAOS4)
+	CONST_STRPTR model, version;
+
+	GetCPUInfoTags(GCIT_ModelString, &model,
+	    GCIT_VersionString, &version, TAG_END);
+
+	if (version != NULL)
+		return [OFString stringWithFormat: @"%s V%s", model, version];
+	else
+		return [OFString stringWithCString: model
+					  encoding: OF_STRING_ENCODING_ASCII];
+#else
+	return nil;
+#endif
+}
+
 #if defined(OF_X86_64) || defined(OF_X86)
 + (bool)supportsMMX
 {
@@ -620,6 +637,12 @@ x86_cpuid(uint32_t eax, uint32_t ecx)
 
 	if (sysctl(name, 2, &value, &length, NULL, 0) == 0)
 		return value;
+# elif defined(OF_AMIGAOS4)
+	uint32_t vectorUnit;
+
+	GetCPUInfoTags(GCIT_VectorUnit, &vectorUnit, TAG_END);
+
+	return (vectorUnit == VECTORTYPE_ALTIVEC);
 # elif defined(OF_MORPHOS)
 	uint32_t supportsAltiVec;
 

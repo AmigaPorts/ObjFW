@@ -58,13 +58,15 @@
 #import "socket.h"
 #import "socket_helpers.h"
 
+static const of_run_loop_mode_t connectRunLoopMode =
+    @"of_tcp_socket_connect_mode";
+
 Class of_tls_socket_class = Nil;
 
-static of_run_loop_mode_t connectRunLoopMode = @"of_tcp_socket_connect_mode";
 static OFString *defaultSOCKS5Host = nil;
 static uint16_t defaultSOCKS5Port = 1080;
 
-@interface OFTCPSocket_AsyncConnectDelegate: OFObject <OFTCPSocketDelegate,
+@interface OFTCPSocketAsyncConnectDelegate: OFObject <OFTCPSocketDelegate,
     OFTCPSocketDelegate_Private, OFDNSResolverDelegate>
 {
 	OFTCPSocket *_socket;
@@ -112,7 +114,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 - (void)sendSOCKS5Request;
 @end
 
-@interface OFTCPSocket_ConnectDelegate: OFObject <OFTCPSocketDelegate>
+@interface OFTCPSocketConnectDelegate: OFObject <OFTCPSocketDelegate>
 {
 @public
 	bool _done;
@@ -120,7 +122,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 }
 @end
 
-@implementation OFTCPSocket_AsyncConnectDelegate
+@implementation OFTCPSocketAsyncConnectDelegate
 - (instancetype)initWithSocket: (OFTCPSocket *)sock
 			  host: (OFString *)host
 			  port: (uint16_t)port
@@ -454,7 +456,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 
 			switch (response[1]) {
 			case 0x02:
-				errNo = EACCES;
+				errNo = EPERM;
 				break;
 			case 0x03:
 				errNo = ENETUNREACH;
@@ -469,13 +471,17 @@ static uint16_t defaultSOCKS5Port = 1080;
 				errNo = ETIMEDOUT;
 				break;
 			case 0x07:
-				errNo = EPROTONOSUPPORT;
+				errNo = EOPNOTSUPP;
 				break;
 			case 0x08:
 				errNo = EAFNOSUPPORT;
 				break;
 			default:
+#ifdef EPROTO
 				errNo = EPROTO;
+#else
+				errNo = 0;
+#endif
 				break;
 			}
 
@@ -574,7 +580,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 }
 @end
 
-@implementation OFTCPSocket_ConnectDelegate
+@implementation OFTCPSocketConnectDelegate
 - (void)dealloc
 {
 	[_exception release];
@@ -671,7 +677,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 	if (_socket == INVALID_SOCKET)
 		@throw [OFNotOpenException exceptionWithObject: self];
 
-	if (connect(_socket, &address->sockaddr.sockaddr,
+	if (connect(_socket, (struct sockaddr *)&address->sockaddr.sockaddr,
 	    address->length) != 0) {
 		*errNo = of_socket_errno();
 		return false;
@@ -705,8 +711,8 @@ static uint16_t defaultSOCKS5Port = 1080;
 {
 	void *pool = objc_autoreleasePoolPush();
 	id <OFTCPSocketDelegate> delegate = [_delegate retain];
-	OFTCPSocket_ConnectDelegate *connectDelegate =
-	    [[[OFTCPSocket_ConnectDelegate alloc] init] autorelease];
+	OFTCPSocketConnectDelegate *connectDelegate =
+	    [[[OFTCPSocketConnectDelegate alloc] init] autorelease];
 	OFRunLoop *runLoop = [OFRunLoop currentRunLoop];
 
 	self.delegate = connectDelegate;
@@ -744,7 +750,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	[[[[OFTCPSocket_AsyncConnectDelegate alloc]
+	[[[[OFTCPSocketAsyncConnectDelegate alloc]
 		  initWithSocket: self
 			    host: host
 			    port: port
@@ -774,7 +780,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 {
 	void *pool = objc_autoreleasePoolPush();
 
-	[[[[OFTCPSocket_AsyncConnectDelegate alloc]
+	[[[[OFTCPSocketAsyncConnectDelegate alloc]
 		  initWithSocket: self
 			    host: host
 			    port: port
@@ -828,7 +834,7 @@ static uint16_t defaultSOCKS5Port = 1080;
 #endif
 
 	setsockopt(_socket, SOL_SOCKET, SO_REUSEADDR,
-	    (const char *)&one, (socklen_t)sizeof(one));
+	    (char *)&one, (socklen_t)sizeof(one));
 
 #if defined(OF_WII) || defined(OF_NINTENDO_3DS)
 	if (port != 0) {

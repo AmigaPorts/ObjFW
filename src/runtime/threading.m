@@ -20,9 +20,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#import "ObjFW_RT.h"
+#import "ObjFWRT.h"
 #import "private.h"
-#import "threading.h"
+#import "mutex.h"
+#import "once.h"
 
 static of_rmutex_t globalMutex;
 

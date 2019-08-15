@@ -101,7 +101,7 @@
 	if (length > SSIZE_MAX)
 		@throw [OFOutOfRangeException exception];
 
-	if ((bytesWritten = send(_socket, buffer, length, 0)) < 0)
+	if ((bytesWritten = send(_socket, (void *)buffer, length, 0)) < 0)
 		@throw [OFWriteFailedException
 		    exceptionWithObject: self
 			requestedLength: length
@@ -124,10 +124,14 @@
 	return (size_t)bytesWritten;
 }
 
-#ifdef OF_WINDOWS
+#if defined(OF_WINDOWS) || defined(OF_AMIGAOS)
 - (void)setBlocking: (bool)enable
 {
+# ifdef OF_WINDOWS
 	u_long v = enable;
+# else
+	char v = enable;
+# endif
 
 	if (ioctlsocket(_socket, FIONBIO, &v) == SOCKET_ERROR)
 		@throw [OFSetOptionFailedException

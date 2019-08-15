@@ -23,7 +23,9 @@
 
 #import "TestsAppDelegate.h"
 
-#import "OFMutableString_UTF8.h"
+#import "OFString.h"
+#import "OFMutableUTF8String.h"
+#import "OFUTF8String.h"
 
 static OFString *module = nil;
 static OFString *whitespace[] = {
@@ -356,7 +358,7 @@ static uint16_t sutf16str[] = {
 #endif
 
 	TEST(@"-[appendUTFString:length:]",
-	    R([s[0] appendUTF8String: "foo\xEF\xBB\xBF" "barqux" + 3
+	    R([s[0] appendUTF8String: "\xEF\xBB\xBF" "barqux"
 			      length: 6]) && [s[0] isEqual: @"foobar"])
 
 	EXPECT_EXCEPTION(@"Detection of invalid UTF-8 encoding #1",
@@ -1432,7 +1434,7 @@ static uint16_t sutf16str[] = {
 		      mutableClass: [SimpleMutableString class]];
 
 	module = @"OFString_UTF8";
-	[self stringTestsWithClass: [OFString_UTF8 class]
-		      mutableClass: [OFMutableString_UTF8 class]];
+	[self stringTestsWithClass: [OFUTF8String class]
+		      mutableClass: [OFMutableUTF8String class]];
 }
 @end

@@ -47,7 +47,7 @@
 #if defined(OF_APPLE_RUNTIME) && __OBJC2__
 # import <objc/objc-exception.h>
 #elif defined(OF_OBJFW_RUNTIME)
-# import "ObjFW_RT.h"
+# import "ObjFWRT.h"
 #endif
 
 #ifdef OF_WINDOWS
@@ -60,7 +60,7 @@
 #if defined(OF_HAVE_ATOMIC_OPS)
 # import "atomic.h"
 #elif defined(OF_HAVE_THREADS)
-# import "threading.h"
+# import "mutex.h"
 #endif
 
 #if defined(OF_HAVE_FORWARDING_TARGET_FOR_SELECTOR)

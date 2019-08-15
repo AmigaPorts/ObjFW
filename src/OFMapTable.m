@@ -681,15 +681,6 @@ defaultEqual(void *object1, void *object2)
 {
 	OF_UNRECOGNIZED_SELECTOR
 }
-
-- (void)reset
-{
-	if (*_mutationsPtr != _mutations)
-		@throw [OFEnumerationMutationException
-		    exceptionWithObject: _mapTable];
-
-	_position = 0;
-}
 @end
 
 @implementation OFMapTableKeyEnumerator
@@ -726,7 +717,7 @@ defaultEqual(void *object1, void *object2)
 }
 @end
 
-@implementation OFMapTable_EnumeratorWrapper
+@implementation OFMapTableEnumeratorWrapper
 - (instancetype)initWithEnumerator: (OFMapTableEnumerator *)enumerator
 			    object: (id)object
 {
@@ -761,15 +752,5 @@ defaultEqual(void *object1, void *object2)
 	}
 
 	return (id)*objectPtr;
-}
-
-- (void)reset
-{
-	@try {
-		[_enumerator reset];
-	} @catch (OFEnumerationMutationException *e) {
-		@throw [OFEnumerationMutationException
-		    exceptionWithObject: _object];
-	}
 }
 @end

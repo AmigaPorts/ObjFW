@@ -30,10 +30,13 @@
 #import "OFArray.h"
 #import "OFDate.h"
 #import "OFDictionary.h"
-#import "OFFile.h"
+#ifdef OF_HAVE_FILES
+# import "OFFile.h"
+#endif
 #import "OFFileManager.h"
 #import "OFLocale.h"
 #import "OFNumber.h"
+#import "OFStream.h"
 #import "OFString.h"
 #import "OFSystemInfo.h"
 #import "OFURL.h"
@@ -46,10 +49,12 @@
 #import "OFInitializationFailedException.h"
 #import "OFInvalidArgumentException.h"
 #import "OFMoveItemFailedException.h"
+#import "OFNotImplementedException.h"
 #import "OFOutOfMemoryException.h"
 #import "OFOutOfRangeException.h"
 #import "OFRemoveItemFailedException.h"
 #import "OFRetrieveItemAttributesFailedException.h"
+#import "OFUndefinedKeyException.h"
 #import "OFUnsupportedProtocolException.h"
 
 #ifdef OF_WINDOWS
@@ -59,23 +64,49 @@
 #endif
 
 #ifdef OF_AMIGAOS
-# ifdef OF_AMIGAOS4
-#  define __USE_INLINE__
-#  define __NOLIBBASE__
-#  define __NOGLOBALIFACE__
-# endif
 # include <proto/exec.h>
 # include <proto/dos.h>
-# include <proto/locale.h>
 #endif
 
-@interface OFFileManager_default: OFFileManager
+@interface OFDefaultFileManager: OFFileManager
 @end
 
+const of_file_attribute_key_t of_file_attribute_key_size =
+    @"of_file_attribute_key_size";
+const of_file_attribute_key_t of_file_attribute_key_type =
+    @"of_file_attribute_key_type";
+const of_file_attribute_key_t of_file_attribute_key_posix_permissions =
+    @"of_file_attribute_key_posix_permissions";
+const of_file_attribute_key_t of_file_attribute_key_posix_uid =
+    @"of_file_attribute_key_posix_uid";
+const of_file_attribute_key_t of_file_attribute_key_posix_gid =
+    @"of_file_attribute_key_posix_gid";
+const of_file_attribute_key_t of_file_attribute_key_owner =
+    @"of_file_attribute_key_owner";
+const of_file_attribute_key_t of_file_attribute_key_group =
+    @"of_file_attribute_key_group";
+const of_file_attribute_key_t of_file_attribute_key_last_access_date =
+    @"of_file_attribute_key_last_access_date";
+const of_file_attribute_key_t of_file_attribute_key_modification_date =
+    @"of_file_attribute_key_modification_date";
+const of_file_attribute_key_t of_file_attribute_key_status_change_date =
+    @"of_file_attribute_key_status_change_date";
+const of_file_attribute_key_t of_file_attribute_key_creation_date =
+    @"of_file_attribute_key_creation_date";
+const of_file_attribute_key_t of_file_attribute_key_symbolic_link_destination =
+    @"of_file_attribute_key_symbolic_link_destination";
+
+const of_file_type_t of_file_type_regular = @"of_file_type_regular";
+const of_file_type_t of_file_type_directory = @"of_file_type_directory";
+const of_file_type_t of_file_type_symbolic_link = @"of_file_type_symbolic_link";
+const of_file_type_t of_file_type_fifo = @"of_file_type_fifo";
+const of_file_type_t of_file_type_character_special =
+    @"of_file_type_character_special";
+const of_file_type_t of_file_type_block_special = @"of_file_type_block_special";
+const of_file_type_t of_file_type_socket = @"of_file_type_socket";
+
 #ifdef OF_AMIGAOS4
-extern struct ExecIFace *IExec;
-static struct Library *DOSBase = NULL;
-static struct DOSIFace *IDOS = NULL;
+# define CurrentDir(lock) SetCurrentDir(lock)
 #endif
 
 static OFFileManager *defaultManager;
@@ -88,16 +119,21 @@ OF_DESTRUCTOR()
 {
 	if (dirChanged)
 		UnLock(CurrentDir(originalDirLock));
-
-# ifdef OF_AMIGAOS4
-	if (IDOS != NULL)
-		DropInterface(IDOS);
-
-	if (DOSBase != NULL)
-		CloseLibrary(DOSBase);
-# endif
 }
 #endif
+
+static id
+attributeForKeyOrException(of_file_attributes_t attributes,
+    of_file_attribute_key_t key)
+{
+	id object = [attributes objectForKey: key];
+
+	if (object == nil)
+		@throw [OFUndefinedKeyException exceptionWithObject: attributes
+								key: key];
+
+	return object;
+}
 
 @implementation OFFileManager
 + (void)initialize
@@ -105,24 +141,15 @@ OF_DESTRUCTOR()
 	if (self != [OFFileManager class])
 		return;
 
-#ifdef OF_AMIGAOS4
-	if ((DOSBase = OpenLibrary("dos.library", 36)) == NULL)
-		@throw [OFInitializationFailedException
-		    exceptionWithClass: self];
-
-	if ((IDOS = (struct DOSIFace *)
-	    GetInterface(DOSBase, "main", 1, NULL)) == NULL)
-		@throw [OFInitializationFailedException
-		    exceptionWithClass: self];
-#endif
-
+#ifdef OF_HAVE_FILES
 	/*
 	 * Make sure OFFile is initialized.
 	 * On some systems, this is needed to initialize the file system driver.
 	 */
 	[OFFile class];
+#endif
 
-	defaultManager = [[OFFileManager_default alloc] init];
+	defaultManager = [[OFDefaultFileManager alloc] init];
 }
 
 + (OFFileManager *)defaultManager
@@ -130,9 +157,10 @@ OF_DESTRUCTOR()
 	return defaultManager;
 }
 
+#ifdef OF_HAVE_FILES
 - (OFString *)currentDirectoryPath
 {
-#if defined(OF_WINDOWS)
+# if defined(OF_WINDOWS)
 	OFString *ret;
 	wchar_t *buffer = _wgetcwd(NULL, 0);
 
@@ -143,7 +171,7 @@ OF_DESTRUCTOR()
 	}
 
 	return ret;
-#elif defined(OF_AMIGAOS)
+# elif defined(OF_AMIGAOS)
 	char buffer[512];
 
 	if (!NameFromLock(((struct Process *)FindTask(NULL))->pr_CurrentDir,
@@ -156,14 +184,14 @@ OF_DESTRUCTOR()
 
 	return [OFString stringWithCString: buffer
 				  encoding: [OFLocale encoding]];
-#else
+# else
 	char buffer[PATH_MAX];
 
 	if ((getcwd(buffer, PATH_MAX)) == NULL)
 		@throw [OFGetCurrentDirectoryPathFailedException
 		    exceptionWithErrNo: errno];
 
-# ifdef OF_DJGPP
+#  ifdef OF_DJGPP
 	/*
 	 * For some reason, getcwd() returns forward slashes on DJGPP, even
 	 * though the native format is to use backwards slashes.
@@ -171,11 +199,11 @@ OF_DESTRUCTOR()
 	for (char *tmp = buffer; *tmp != '\0'; tmp++)
 		if (*tmp == '/')
 			*tmp = '\\';
-# endif
+#  endif
 
 	return [OFString stringWithCString: buffer
 				  encoding: [OFLocale encoding]];
-#endif
+# endif
 }
 
 - (OFURL *)currentDirectoryURL
@@ -189,6 +217,7 @@ OF_DESTRUCTOR()
 	objc_autoreleasePoolPop(pool);
 	return [ret autorelease];
 }
+#endif
 
 - (of_file_attributes_t)attributesOfItemAtURL: (OFURL *)URL
 {
@@ -203,6 +232,7 @@ OF_DESTRUCTOR()
 	return [URLHandler attributesOfItemAtURL: URL];
 }
 
+#ifdef OF_HAVE_FILES
 - (of_file_attributes_t)attributesOfItemAtPath: (OFString *)path
 {
 	void *pool = objc_autoreleasePoolPush();
@@ -216,6 +246,7 @@ OF_DESTRUCTOR()
 
 	return [ret autorelease];
 }
+#endif
 
 - (void)setAttributes: (of_file_attributes_t)attributes
 	  ofItemAtURL: (OFURL *)URL
@@ -232,6 +263,7 @@ OF_DESTRUCTOR()
 		      ofItemAtURL: URL];
 }
 
+#ifdef OF_HAVE_FILES
 - (void)setAttributes: (of_file_attributes_t)attributes
 	 ofItemAtPath: (OFString *)path
 {
@@ -242,6 +274,7 @@ OF_DESTRUCTOR()
 
 	objc_autoreleasePoolPop(pool);
 }
+#endif
 
 - (bool)fileExistsAtURL: (OFURL *)URL
 {
@@ -256,6 +289,7 @@ OF_DESTRUCTOR()
 	return [URLHandler fileExistsAtURL: URL];
 }
 
+#ifdef OF_HAVE_FILES
 - (bool)fileExistsAtPath: (OFString *)path
 {
 	void *pool = objc_autoreleasePoolPush();
@@ -267,6 +301,7 @@ OF_DESTRUCTOR()
 
 	return ret;
 }
+#endif
 
 - (bool)directoryExistsAtURL: (OFURL *)URL
 {
@@ -281,6 +316,7 @@ OF_DESTRUCTOR()
 	return [URLHandler directoryExistsAtURL: URL];
 }
 
+#ifdef OF_HAVE_FILES
 - (bool)directoryExistsAtPath: (OFString *)path
 {
 	void *pool = objc_autoreleasePoolPush();
@@ -292,6 +328,7 @@ OF_DESTRUCTOR()
 
 	return ret;
 }
+#endif
 
 - (void)createDirectoryAtURL: (OFURL *)URL
 {
@@ -357,6 +394,7 @@ OF_DESTRUCTOR()
 	objc_autoreleasePoolPop(pool);
 }
 
+#ifdef OF_HAVE_FILES
 - (void)createDirectoryAtPath: (OFString *)path
 {
 	void *pool = objc_autoreleasePoolPush();
@@ -376,6 +414,7 @@ OF_DESTRUCTOR()
 
 	objc_autoreleasePoolPop(pool);
 }
+#endif
 
 - (OFArray OF_GENERIC(OFString *) *)contentsOfDirectoryAtURL: (OFURL *)URL
 {
@@ -390,6 +429,7 @@ OF_DESTRUCTOR()
 	return [URLHandler contentsOfDirectoryAtURL: URL];
 }
 
+#ifdef OF_HAVE_FILES
 - (OFArray OF_GENERIC(OFString *) *)contentsOfDirectoryAtPath: (OFString *)path
 {
 	void *pool = objc_autoreleasePoolPush();
@@ -409,12 +449,12 @@ OF_DESTRUCTOR()
 	if (path == nil)
 		@throw [OFInvalidArgumentException exception];
 
-#if defined(OF_WINDOWS)
+# if defined(OF_WINDOWS)
 	if (_wchdir(path.UTF16String) != 0)
 		@throw [OFChangeCurrentDirectoryPathFailedException
 		    exceptionWithPath: path
 				errNo: errno];
-#elif defined(OF_AMIGAOS)
+# elif defined(OF_AMIGAOS)
 	BPTR lock, oldLock;
 
 	if ((lock = Lock([path cStringWithEncoding: [OFLocale encoding]],
@@ -447,12 +487,12 @@ OF_DESTRUCTOR()
 		UnLock(oldLock);
 
 	dirChanged = true;
-#else
+# else
 	if (chdir([path cStringWithEncoding: [OFLocale encoding]]) != 0)
 		@throw [OFChangeCurrentDirectoryPathFailedException
 		    exceptionWithPath: path
 				errNo: errno];
-#endif
+# endif
 }
 
 - (void)changeCurrentDirectoryURL: (OFURL *)URL
@@ -474,6 +514,7 @@ OF_DESTRUCTOR()
 
 	objc_autoreleasePoolPop(pool);
 }
+#endif
 
 - (void)copyItemAtURL: (OFURL *)source
 		toURL: (OFURL *)destination
@@ -519,17 +560,23 @@ OF_DESTRUCTOR()
 		@try {
 			[self createDirectoryAtURL: destination];
 
-#ifdef OF_FILE_MANAGER_SUPPORTS_PERMISSIONS
-			of_file_attribute_key_t key =
-			    of_file_attribute_key_posix_permissions;
-			OFNumber *permissions = [attributes objectForKey: key];
-			of_file_attributes_t destinationAttributes =
-			    [OFDictionary dictionaryWithObject: permissions
-							forKey: key];
+			@try {
+				of_file_attribute_key_t key =
+				    of_file_attribute_key_posix_permissions;
+				OFNumber *permissions =
+				    [attributes objectForKey: key];
+				of_file_attributes_t destinationAttributes;
 
-			[self setAttributes: destinationAttributes
-				ofItemAtURL: destination];
-#endif
+				if (permissions != nil) {
+					destinationAttributes = [OFDictionary
+					    dictionaryWithObject: permissions
+							  forKey: key];
+					[self
+					    setAttributes: destinationAttributes
+					      ofItemAtURL: destination];
+				}
+			} @catch (OFNotImplementedException *e) {
+			}
 
 			contents = [self contentsOfDirectoryAtURL: source];
 		} @catch (id e) {
@@ -590,17 +637,23 @@ OF_DESTRUCTOR()
 							length: length];
 			}
 
-#ifdef OF_FILE_MANAGER_SUPPORTS_PERMISSIONS
-			of_file_attribute_key_t key =
-			    of_file_attribute_key_posix_permissions;
-			OFNumber *permissions = [attributes objectForKey: key];
-			of_file_attributes_t destinationAttributes =
-			    [OFDictionary dictionaryWithObject: permissions
-							forKey: key];
+			@try {
+				of_file_attribute_key_t key =
+				    of_file_attribute_key_posix_permissions;
+				OFNumber *permissions = [attributes
+				    objectForKey: key];
+				of_file_attributes_t destinationAttributes;
 
-			[self setAttributes: destinationAttributes
-				ofItemAtURL: destination];
-#endif
+				if (permissions != nil) {
+					destinationAttributes = [OFDictionary
+					    dictionaryWithObject: permissions
+							  forKey: key];
+					[self
+					    setAttributes: destinationAttributes
+					      ofItemAtURL: destination];
+				}
+			} @catch (OFNotImplementedException *e) {
+			}
 		} @catch (id e) {
 			/*
 			 * Only convert exceptions to OFCopyItemFailedException
@@ -620,7 +673,6 @@ OF_DESTRUCTOR()
 			[destinationStream close];
 			free(buffer);
 		}
-#ifdef OF_FILE_MANAGER_SUPPORTS_SYMLINKS
 	} else if ([type isEqual: of_file_type_symbolic_link]) {
 		@try {
 			OFString *linkDestination =
@@ -643,7 +695,6 @@ OF_DESTRUCTOR()
 
 			@throw e;
 		}
-#endif
 	} else
 		@throw [OFCopyItemFailedException
 		    exceptionWithSourceURL: source
@@ -653,6 +704,7 @@ OF_DESTRUCTOR()
 	objc_autoreleasePoolPop(pool);
 }
 
+#ifdef OF_HAVE_FILES
 - (void)moveItemAtPath: (OFString *)source
 		toPath: (OFString *)destination
 {
@@ -663,6 +715,7 @@ OF_DESTRUCTOR()
 
 	objc_autoreleasePoolPop(pool);
 }
+#endif
 
 - (void)moveItemAtURL: (OFURL *)source
 		toURL: (OFURL *)destination
@@ -731,6 +784,7 @@ OF_DESTRUCTOR()
 	[URLHandler removeItemAtURL: URL];
 }
 
+#ifdef OF_HAVE_FILES
 - (void)removeItemAtPath: (OFString *)path
 {
 	void *pool = objc_autoreleasePoolPush();
@@ -739,6 +793,7 @@ OF_DESTRUCTOR()
 
 	objc_autoreleasePoolPop(pool);
 }
+#endif
 
 - (void)linkItemAtURL: (OFURL *)source
 		toURL: (OFURL *)destination
@@ -811,7 +866,7 @@ OF_DESTRUCTOR()
 #endif
 @end
 
-@implementation OFFileManager_default
+@implementation OFDefaultFileManager
 - (instancetype)autorelease
 {
 	return self;
@@ -829,5 +884,76 @@ OF_DESTRUCTOR()
 - (unsigned int)retainCount
 {
 	return OF_RETAIN_COUNT_MAX;
+}
+@end
+
+@implementation OFDictionary (FileAttributes)
+- (uintmax_t)fileSize
+{
+	return [attributeForKeyOrException(self, of_file_attribute_key_size)
+	    uIntMaxValue];
+}
+
+- (of_file_type_t)fileType
+{
+	return attributeForKeyOrException(self, of_file_attribute_key_type);
+}
+
+- (uint16_t)filePOSIXPermissions
+{
+	return [attributeForKeyOrException(self,
+	    of_file_attribute_key_posix_permissions) uInt16Value];
+}
+
+- (uint32_t)filePOSIXUID
+{
+	return [attributeForKeyOrException(self,
+	    of_file_attribute_key_posix_uid) uInt32Value];
+}
+
+- (uint32_t)filePOSIXGID
+{
+	return [attributeForKeyOrException(self,
+	    of_file_attribute_key_posix_gid) uInt32Value];
+}
+
+- (OFString *)fileOwner
+{
+	return attributeForKeyOrException(self, of_file_attribute_key_owner);
+}
+
+- (OFString *)fileGroup
+{
+	return attributeForKeyOrException(self, of_file_attribute_key_group);
+}
+
+- (OFDate *)fileLastAccessDate
+{
+	return attributeForKeyOrException(self,
+	    of_file_attribute_key_last_access_date);
+}
+
+- (OFDate *)fileModificationDate
+{
+	return attributeForKeyOrException(self,
+	    of_file_attribute_key_modification_date);
+}
+
+- (OFDate *)fileStatusChangeDate
+{
+	return attributeForKeyOrException(self,
+	    of_file_attribute_key_status_change_date);
+}
+
+- (OFDate *)fileCreationDate
+{
+	return attributeForKeyOrException(self,
+	    of_file_attribute_key_creation_date);
+}
+
+- (OFString *)fileSymbolicLinkDestination
+{
+	return attributeForKeyOrException(self,
+	    of_file_attribute_key_symbolic_link_destination);
 }
 @end
